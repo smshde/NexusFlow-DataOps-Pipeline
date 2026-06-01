@@ -1,0 +1,5 @@
+# NexusFlow Datagen Service Requirements
+faker==24.3.0
+confluent-kafka==2.4.0
+fastavro==1.9.4
+boto3==1.34.69 

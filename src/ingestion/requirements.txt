@@ -1,0 +1,6 @@
+# NexusFlow Ingestion Service Requirements
+# src/ingestion/requirements.txt
+
+confluent-kafka==2.4.0
+boto3==1.34.69
+botocore==1.34.69

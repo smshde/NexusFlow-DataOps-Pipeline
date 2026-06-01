@@ -1,0 +1,12 @@
+# ============================================================
+# NexusFlow — Kafka Namespace
+# File: kubernetes/kafka/namespace.yml
+# ============================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka
+  labels:
+    app.kubernetes.io/managed-by: kubectl
+    project: nexusflow
+    component: ingestion

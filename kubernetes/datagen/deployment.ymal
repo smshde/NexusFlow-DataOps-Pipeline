@@ -1,0 +1,221 @@
+
+# ✅  needs ECR URL update
+---
+# Namespace for all NexusFlow application workloads
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexusflow
+  labels:
+    app.kubernetes.io/managed-by: kubectl
+    project: nexusflow
+
+---
+# ConfigMap for shared environment config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexusflow-config
+  namespace: nexusflow
+data:
+  NEXUSFLOW_ENV:        "dev"
+  AWS_REGION:           "ca-central-1"
+  KAFKA_TOPIC_ORDERS:   "orders"
+  KAFKA_TOPIC_CLICKS:   "clickstream"
+  KAFKA_TOPIC_INVENTORY: "inventory-events"
+  LOG_LEVEL:            "INFO"
+  ORDERS_PER_SECOND:    "5"
+  CLICKS_PER_SECOND:    "50"
+
+---
+# Secret reference (populated by External Secrets Operator from AWS Secrets Manager)
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: nexusflow-secrets
+  namespace: nexusflow
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+  target:
+    name: nexusflow-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: MSK_BOOTSTRAP_SERVERS
+      remoteRef:
+        key: nexusflow/dev/msk
+        property: bootstrap_servers
+    - secretKey: REDSHIFT_HOST
+      remoteRef:
+        key: nexusflow/dev/redshift
+        property: host
+    - secretKey: REDSHIFT_PASSWORD
+      remoteRef:
+        key: nexusflow/dev/redshift
+        property: password
+    - secretKey: SCHEMA_REGISTRY_URL
+      remoteRef:
+        key: nexusflow/dev/schema-registry
+        property: url
+
+---
+# Data Generator Deployment — continuous streaming producer
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexusflow-datagen
+  namespace: nexusflow
+  labels:
+    app: datagen
+    component: ingestion
+    project: nexusflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: datagen
+  strategy:
+    type: Recreate          # Only one producer at a time
+  template:
+    metadata:
+      labels:
+        app: datagen
+        component: ingestion
+        project: nexusflow
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8000"
+    spec:
+      serviceAccountName: nexusflow-datagen-sa
+      terminationGracePeriodSeconds: 60
+
+      containers:
+        - name: datagen
+          image: ECR_REGISTRY/nexusflow-datagen:IMAGE_SHA
+          imagePullPolicy: Always
+          command: ["python", "kafka_producer.py"]
+          args:
+            - "--mode=live"
+            - "--bootstrap-servers=$(MSK_BOOTSTRAP_SERVERS)"
+            - "--num-customers=10000"
+            - "--orders-per-second=$(ORDERS_PER_SECOND)"
+            - "--clicks-per-second=$(CLICKS_PER_SECOND)"
+
+          envFrom:
+            - configMapRef:
+                name: nexusflow-config
+            - secretRef:
+                name: nexusflow-secrets
+
+          resources:
+            requests:
+              cpu:    "250m"
+              memory: "512Mi"
+            limits:
+              cpu:    "1"
+              memory: "2Gi"
+
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import os; exit(0 if os.path.exists('/tmp/producer_alive') else 1)"]
+            initialDelaySeconds: 30
+            periodSeconds:       30
+
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import os; exit(0 if os.path.exists('/tmp/producer_ready') else 1)"]
+            initialDelaySeconds: 15
+            periodSeconds:       10
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: workload
+                    operator: NotIn
+                    values: [spark]
+
+---
+# Batch Data Generator — CronJob for historical backfill
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nexusflow-datagen-batch
+  namespace: nexusflow
+spec:
+  schedule: "0 1 * * *"          # Daily at 01:00 UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: datagen-batch
+            component: ingestion
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: nexusflow-datagen-sa
+          containers:
+            - name: datagen-batch
+              image: ECR_REGISTRY/nexusflow-datagen:IMAGE_SHA
+              command: ["python", "ecommerce_generator.py"]
+              args:
+                - "--mode=batch"
+                - "--output-dir=/tmp/nexusflow-data"
+                - "--num-customers=10000"
+                - "--num-orders=100000"
+
+              envFrom:
+                - configMapRef:
+                    name: nexusflow-config
+                - secretRef:
+                    name: nexusflow-secrets
+
+              env:
+                - name: S3_BRONZE_BUCKET
+                  valueFrom:
+                    configMapKeyRef:
+                      name: nexusflow-config
+                      key: BRONZE_BUCKET
+
+              resources:
+                requests:
+                  cpu:    "500m"
+                  memory: "1Gi"
+                limits:
+                  cpu:    "2"
+                  memory: "4Gi"
+
+              volumeMounts:
+                - name: data-tmp
+                  mountPath: /tmp/nexusflow-data
+
+          volumes:
+            - name: data-tmp
+              emptyDir:
+                sizeLimit: 10Gi
+
+---
+# ServiceAccount with IAM role annotation (IRSA)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexusflow-datagen-sa
+  namespace: nexusflow
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-datagen-role

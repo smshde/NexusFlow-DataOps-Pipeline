@@ -1,0 +1,203 @@
+# ============================================================
+# NexusFlow — Kafka Consumer (MSK → S3) Deployment
+# File: kubernetes/kafka/kafka-connect-deployment.yml
+#
+# Runs kafka_consumer.py as a long-lived pod.
+# Consumes from MSK topics → writes micro-batches to S3 bronze.
+#
+# ⚠️ BEFORE APPLYING:
+#   Replace ECR_REGISTRY with your actual ECR registry URL
+#   from: terraform output ecr_registry
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexusflow-kafka-consumer
+  namespace: kafka
+  labels:
+    app:       kafka-consumer
+    component: ingestion
+    project:   nexusflow
+spec:
+  replicas: 1          # one consumer per topic group — do not scale without
+                        # adjusting consumer group partition assignment
+  selector:
+    matchLabels:
+      app: kafka-consumer
+  strategy:
+    type: Recreate     # only one consumer at a time to avoid duplicate writes
+  template:
+    metadata:
+      labels:
+        app:       kafka-consumer
+        component: ingestion
+        project:   nexusflow
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8000"
+    spec:
+      serviceAccountName: nexusflow-ingestion-sa
+
+      # Graceful shutdown — let consumer finish flushing to S3
+      terminationGracePeriodSeconds: 60
+
+      containers:
+        - name: kafka-consumer
+          # ⚠️ Replace ECR_REGISTRY with output from: terraform output ecr_registry
+          image: ECR_REGISTRY/nexusflow-ingestion:latest
+          imagePullPolicy: Always
+
+          command: ["python", "kafka_consumer.py"]
+          args:
+            - "--bootstrap-servers=$(MSK_BOOTSTRAP_SERVERS)"
+            - "--s3-bucket=$(S3_BRONZE_BUCKET)"
+            - "--aws-region=$(AWS_REGION)"
+            - "--consumer-group=nexusflow-s3-sink"
+            - "--flush-size=1000"
+            - "--flush-interval=30"
+
+          env:
+            - name: AWS_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: nexusflow-config
+                  key:  NEXUSFLOW_ENV
+            - name: AWS_REGION
+              value: "ca-central-1"  # ⚠️ confirm matches your region
+            - name: S3_BRONZE_BUCKET
+              value: "nexusflow-dev-lakehouse"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: LOG_LEVEL
+              value: "INFO"
+
+          envFrom:
+            - secretRef:
+                name: nexusflow-secrets  # contains MSK_BOOTSTRAP_SERVERS
+
+          resources:
+            requests:
+              cpu:    "250m"
+              memory: "512Mi"
+            limits:
+              cpu:    "1"
+              memory: "1Gi"
+
+          livenessProbe:
+            exec:
+              # Consumer writes heartbeat file every poll cycle
+              command:
+                - python3
+                - -c
+                - |
+                  import os, time
+                  hb = '/tmp/consumer_alive'
+                  assert os.path.exists(hb)
+                  assert time.time() - os.path.getmtime(hb) < 120
+            initialDelaySeconds: 30
+            periodSeconds:       30
+            failureThreshold:    3
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+      affinity:
+        # Prefer to run on general nodes, not Spark nodes
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key:      workload
+                    operator: NotIn
+                    values:   [spark]
+
+---
+# ============================================================
+# Service Account with IRSA for S3 + MSK access
+# ============================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexusflow-ingestion-sa
+  namespace: kafka
+  annotations:
+    # ⚠️ Replace ACCOUNT_ID with your AWS account ID
+    # from: aws sts get-caller-identity --query Account --output text
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-app-irsa
+
+---
+# ============================================================
+# Batch Generator CronJob — runs daily at 01:00 UTC
+# Uploads CSV/XML/JSONL files directly to S3 bronze
+# ============================================================
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nexusflow-batch-generator
+  namespace: kafka
+  labels:
+    app:       batch-generator
+    component: ingestion
+    project:   nexusflow
+spec:
+  schedule:            "0 1 * * *"   # daily at 01:00 UTC
+  concurrencyPolicy:   Forbid         # never run two at once
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit:     3
+
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app:       batch-generator
+            component: ingestion
+        spec:
+          restartPolicy:      OnFailure
+          serviceAccountName: nexusflow-ingestion-sa
+
+          containers:
+            - name: batch-generator
+              # ⚠️ Replace ECR_REGISTRY with your ECR registry URL
+              image: ECR_REGISTRY/nexusflow-datagen:latest
+              imagePullPolicy: Always
+
+              command: ["python", "batch_generator.py"]
+              args:
+                - "--mode=s3"
+                - "--s3-bucket=nexusflow-dev-lakehouse"
+                - "--aws-region=ca-central-1"
+                - "--num-customers=10000"
+                - "--num-orders=100000"
+                - "--num-reviews=10000"
+                - "--seed=42"
+
+              env:
+                - name: PYTHONUNBUFFERED
+                  value: "1"
+                - name: AWS_REGION
+                  value: "ca-central-1"
+
+              resources:
+                requests:
+                  cpu:    "500m"
+                  memory: "1Gi"
+                limits:
+                  cpu:    "2"
+                  memory: "4Gi"
+
+              volumeMounts:
+                - name: data-tmp
+                  mountPath: /tmp/nexusflow-data
+
+          volumes:
+            - name: data-tmp
+              emptyDir:
+                sizeLimit: 5Gi
