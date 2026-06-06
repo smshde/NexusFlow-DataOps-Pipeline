@@ -1,0 +1,305 @@
+version: 2
+
+# ============================================================
+# NexusFlow — dbt Schema Tests + Data Quality
+# ============================================================
+
+models:
+  # ── FACT ORDERS ─────────────────────────────────────────
+  - name: fact_orders
+    description: >
+      Central fact table for all e-commerce orders.
+      Grain: one row per order_id. No PII.
+    meta:
+      owner: data-engineering
+      domain: commerce
+      sla: daily_6am
+    columns:
+      - name: order_sk
+        description: Surrogate key (MD5 hash of order_id)
+        tests:
+          - unique
+          - not_null
+
+      - name: order_id
+        description: Natural key from source system
+        tests:
+          - unique
+          - not_null
+
+      - name: customer_id
+        description: FK to dim_customers
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_customers')
+              field: customer_id
+              severity: warn
+
+      - name: order_date
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "order_date >= '2020-01-01'"
+              name: order_date_not_before_2020
+
+      - name: total_amount
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "total_amount >= 0"
+              name: total_amount_non_negative
+
+      - name: order_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: [pending, confirmed, processing, shipped, delivered, cancelled, refunded]
+
+      - name: payment_method
+        tests:
+          - accepted_values:
+              values: [credit_card, debit_card, paypal, apple_pay, google_pay,
+                       buy_now_pay_later, gift_card]
+              severity: warn
+
+      - name: shipping_method
+        tests:
+          - accepted_values:
+              values: [standard, express, overnight, pickup, same_day]
+              severity: warn
+
+      - name: customer_sk
+        tests:
+          - not_null
+
+      - name: item_count
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "item_count >= 1"
+              name: item_count_at_least_one
+
+    tests:
+      # Row count freshness check
+      - dbt_utils.expression_is_true:
+          expression: "count(*) > 0"
+          name: fact_orders_not_empty
+
+      # No future-dated orders
+      - dbt_utils.expression_is_true:
+          expression: "order_date <= current_timestamp + interval '1 hour'"
+          name: no_future_orders
+
+  # ── DIM CUSTOMERS ────────────────────────────────────────
+  - name: dim_customers
+    description: >
+      Customer dimension with SCD Type 2 history. No raw PII.
+    columns:
+      - name: customer_sk
+        tests:
+          - unique
+          - not_null
+
+      - name: customer_id
+        tests:
+          - not_null
+
+      - name: loyalty_tier
+        tests:
+          - not_null
+          - accepted_values:
+              values: [bronze, silver, gold, platinum]
+
+      - name: segment
+        tests:
+          - not_null
+          - accepted_values:
+              values: [bargain_hunter, loyal, at_risk, new, vip, dormant]
+
+      - name: _is_current
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+
+      - name: email_hash
+        description: SHA-256 of email — safe for joining
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "len(email_hash) = 64"
+              name: email_hash_valid_sha256
+
+      - name: age_bracket
+        tests:
+          - accepted_values:
+              values: ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
+              severity: warn
+
+      - name: loyalty_tier_rank
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "loyalty_tier_rank between 1 and 4"
+              name: loyalty_rank_valid_range
+
+    tests:
+      # Exactly one current record per customer_id
+      - dbt_utils.expression_is_true:
+          expression: |
+            (SELECT count(*) FROM (
+              SELECT customer_id, count(*) as cnt
+              FROM {{ this }}
+              WHERE _is_current = true
+              GROUP BY customer_id
+              HAVING count(*) > 1
+            ) dups) = 0
+          name: one_current_record_per_customer
+
+  # ── CUSTOMER ML FEATURES ─────────────────────────────────
+  - name: customer_ml_features
+    description: >
+      Daily customer feature snapshot for ML models.
+      RFM + churn risk + LLM profile text.
+    columns:
+      - name: customer_id
+        tests:
+          - not_null
+
+      - name: snapshot_date
+        tests:
+          - not_null
+
+      - name: r_score
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "r_score between 1 and 5"
+              name: r_score_valid_range
+
+      - name: f_score
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "f_score between 1 and 5"
+              name: f_score_valid_range
+
+      - name: m_score
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "m_score between 1 and 5"
+              name: m_score_valid_range
+
+      - name: churn_risk_tier
+        tests:
+          - accepted_values:
+              values: [low, medium, high]
+
+      - name: rfm_total_score
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "rfm_total_score between 3 and 15"
+              name: rfm_score_valid_range
+
+      - name: total_revenue
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "total_revenue >= 0"
+              name: total_revenue_non_negative
+
+      - name: customer_profile_text
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "len(customer_profile_text) > 50"
+              name: profile_text_has_content
+
+    tests:
+      # Unique per customer per day
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [customer_id, snapshot_date]
+          name: customer_features_unique_per_day
+
+  # ── SILVER ORDERS ─────────────────────────────────────────
+  - name: silver_orders
+    description: Cleaned, deduplicated orders from bronze layer
+    columns:
+      - name: order_id
+        tests:
+          - unique
+          - not_null
+
+      - name: customer_id
+        tests:
+          - not_null
+
+      - name: order_date
+        tests:
+          - not_null
+
+      - name: total_amount
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "total_amount >= 0"
+              name: silver_total_amount_non_negative
+
+  # ── SILVER CLICKSTREAM ────────────────────────────────────
+  - name: silver_clickstream
+    description: Deduplicated, typed clickstream events
+    columns:
+      - name: event_id
+        tests:
+          - unique
+          - not_null
+
+      - name: session_id
+        tests:
+          - not_null
+
+      - name: event_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: [page_view, product_view, add_to_cart, remove_from_cart,
+                       checkout_start, search, wishlist_add, review_view, click]
+
+# ── SOURCES (bronze layer via Glue Catalog) ───────────────
+sources:
+  - name: bronze
+    description: Raw S3 bronze data exposed via Glue catalog / Redshift Spectrum
+    database: nexusflow_external
+    schema: bronze
+    loader: spark_emr
+    loaded_at_field: _ingestion_ts
+    freshness:
+      warn_after:  {count: 12, period: hour}
+      error_after: {count: 24, period: hour}
+
+    tables:
+      - name: raw_orders
+        description: Raw JSON orders from Kafka/S3 landing
+        columns:
+          - name: order_id
+            tests: [not_null]
+          - name: _ingestion_ts
+            tests: [not_null]
+
+      - name: raw_clickstream
+        description: Raw clickstream events from Kafka
+        columns:
+          - name: event_id
+            tests: [not_null]
+
+      - name: raw_inventory
+        description: Inventory CSV snapshots
+        columns:
+          - name: product_sku
+            tests: [not_null]
+
+      - name: raw_customers
+        description: Customer master data JSONL
+        columns:
+          - name: customer_id
+            tests: [not_null]

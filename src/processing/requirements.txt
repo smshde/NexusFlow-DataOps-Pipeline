@@ -1,0 +1,4 @@
+# NexusFlow Processing Service Requirements
+# src/processing/requirements.txt
+boto3==1.34.69
+awswrangler==3.7.3

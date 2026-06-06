@@ -1,0 +1,74 @@
+---
+# ============================================================
+# NexusFlow — dbt Runner CronJob
+# File: kubernetes/dbt/cronjob.yml
+# Runs dbt transformations daily after Spark jobs complete
+# ============================================================
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nexusflow-dbt
+  namespace: nexusflow
+  labels:
+    app: dbt
+    component: transformation
+    project: nexusflow
+spec:
+  schedule: "0 5 * * *"        # 05:00 UTC — after Spark completes
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: dbt
+            component: transformation
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: nexusflow-dbt-sa
+          containers:
+            - name: dbt
+              # ⚠️ Replace ECR_REGISTRY with your ECR registry URL
+              image: ECR_REGISTRY/nexusflow-dbt:latest
+              imagePullPolicy: Always
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -e
+                  echo "Starting dbt run..."
+                  dbt deps    --profiles-dir /app/dbt_project --target dev
+                  dbt run     --profiles-dir /app/dbt_project --target dev \
+                              --select tag:silver tag:gold
+                  dbt test    --profiles-dir /app/dbt_project --target dev \
+                              --select tag:gold
+                  dbt docs generate \
+                              --profiles-dir /app/dbt_project --target dev
+                  echo "dbt complete ✅"
+              envFrom:
+                - configMapRef:
+                    name: nexusflow-config
+                - secretRef:
+                    name: nexusflow-secrets
+              env:
+                - name: DBT_ENV
+                  value: "dev"
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 1Gi
+                limits:
+                  cpu: 2
+                  memory: 4Gi
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexusflow-dbt-sa
+  namespace: nexusflow
+  annotations:
+    # ⚠️ Replace ACCOUNT_ID with your AWS account ID
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-dbt-irsa

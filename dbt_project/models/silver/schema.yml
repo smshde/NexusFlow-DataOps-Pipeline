@@ -1,0 +1,57 @@
+version: 2
+
+models:
+  - name: silver_orders
+    description: Cleaned deduplicated orders — PII safe
+    columns:
+      - name: order_id
+        tests: [unique, not_null]
+      - name: customer_id
+        tests: [not_null]
+      - name: total_amount
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: order_status
+        tests:
+          - accepted_values:
+              values: [pending,confirmed,processing,shipped,delivered,cancelled,refunded]
+
+  - name: silver_customers
+    description: PII-masked customer records
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]
+      - name: email_hash
+        tests: [not_null]
+      - name: loyalty_tier
+        tests:
+          - accepted_values:
+              values: [bronze, silver, gold, platinum]
+
+  - name: silver_clickstream
+    description: Deduplicated typed clickstream events
+    columns:
+      - name: event_id
+        tests: [unique, not_null]
+      - name: event_type
+        tests:
+          - accepted_values:
+              values: [page_view,product_view,add_to_cart,remove_from_cart,
+                       checkout_start,search,wishlist_add,review_view,click]
+
+sources:
+  - name: bronze
+    database: nexusflow_external
+    schema: bronze
+    loader: spark_emr
+    loaded_at_field: _ingestion_ts
+    freshness:
+      warn_after:  {count: 12, period: hour}
+      error_after: {count: 24, period: hour}
+    tables:
+      - name: raw_orders
+      - name: raw_customers
+      - name: raw_clickstream
+      - name: raw_inventory

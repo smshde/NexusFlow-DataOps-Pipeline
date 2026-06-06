@@ -1,0 +1,42 @@
+nexusflow:
+  target: dev
+  outputs:
+
+    dev:
+      type: redshift
+      host:     "{{ env_var('REDSHIFT_HOST') }}"
+      port:     5439
+      dbname:   nexusflow
+      user:     "{{ env_var('REDSHIFT_USER', 'nexusflow_admin') }}"
+      password: "{{ env_var('REDSHIFT_PASSWORD') }}"
+      schema:   dbt_dev
+      threads:  4
+      keepalives_idle: 240
+      connect_timeout: 10
+      sslmode:  require
+      ra3_node: true                # Enable cross-database queries
+      search_path: gold,silver,bronze,public
+
+    prod:
+      type: redshift
+      host:     "{{ env_var('REDSHIFT_HOST') }}"
+      port:     5439
+      dbname:   nexusflow
+      user:     "{{ env_var('REDSHIFT_USER') }}"
+      password: "{{ env_var('REDSHIFT_PASSWORD') }}"
+      schema:   dbt_prod
+      threads:  8
+      keepalives_idle: 240
+      connect_timeout: 10
+      sslmode:  require
+      ra3_node: true
+
+    ci:
+      type: redshift
+      host:     localhost
+      port:     5439
+      dbname:   nexusflow_test
+      user:     test_user
+      password: test_password
+      schema:   dbt_ci
+      threads:  2

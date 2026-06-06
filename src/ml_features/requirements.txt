@@ -1,0 +1,6 @@
+# NexusFlow ML Features Requirements
+# src/ml_features/requirements.txt
+boto3==1.34.69
+awswrangler==3.7.3
+pandas==2.2.0
+scikit-learn==1.4.0

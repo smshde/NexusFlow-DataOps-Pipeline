@@ -1,0 +1,74 @@
+# ============================================================
+# NexusFlow — Airflow Helm Values
+# File: kubernetes/airflow/values.yml
+# ============================================================
+
+airflowVersion: "2.9.0"
+executor: LocalExecutor
+
+webserver:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1
+      memory: 2Gi
+  defaultUser:
+    enabled: true
+    role: Admin
+    username: admin
+    email: admin@nexusflow.io
+    firstName: Nexus
+    lastName: Flow
+    password: nexusflow2026   # DEMO CREDENTIALS ⚠️ change for prod
+
+scheduler:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1
+      memory: 2Gi
+
+dags:
+  gitSync:
+    enabled: true
+    # ⚠️ actual GitHub repo URL
+    repo: https://github.com/smshde/NexusFlow-DataOps-Pipeline.git
+    branch: main
+    subPath: airflow/dags
+
+logs:
+  persistence:
+    enabled: false
+
+postgresql:
+  enabled: true
+  auth:
+    password: nexusflow2026   # DEMO CREDENTIALS ⚠️ change for prod
+
+redis:
+  enabled: false
+
+env:
+  - name: AIRFLOW__CORE__LOAD_EXAMPLES
+    value: "false"
+  - name: NEXUSFLOW_ENV
+    value: "dev"
+  - name: AWS_REGION
+    value: "ca-central-1"
+
+serviceAccount:
+  create: true
+  name: airflow-scheduler
+  annotations:
+    # ⚠️ Replace ACCOUNT_ID after terraform apply or use a variable
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-airflow-irsa
+
+extraEnvFrom:
+  - secretRef:
+      name: nexusflow-secrets

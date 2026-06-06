@@ -85,7 +85,8 @@ resource "aws_glue_crawler" "layers" {
   # Cron: run every 6 hours
   # ⚠️ "cron(0 */2 * * ? *)" for 2-hour schedule in prod
   # ⚠️ CHANGE to "" (empty) to disable automatic schedule and run manually
-  schedule = "cron(0 4 * * ? *)" # once daily at 04:00 UTC,Runs after Spark job completes (03:00 start + ~30min processing)
+  # schedule = "cron(0 4 * * ? *)" # once daily at 04:00 UTC,Runs after Spark job completes (03:00 start + ~30min processing) # schedule removed: on-demand via Airflow-only
+  # schedule only needs to be included if not managed by Airflow and in such case recrawl_policy needed.
 
   # Points crawler at the layer's S3 prefix
   s3_target {
@@ -100,13 +101,6 @@ resource "aws_glue_crawler" "layers" {
     update_behavior = "LOG" # update schema on changes
     delete_behavior = "LOG"               # log but don't delete on removals
                                           # ⚠️ CHANGE to "DEPRECATE_IN_DATABASE" for prod safety
-  }
-
-  # Avoid re-crawling unchanged files (performance + cost)
-  recrawl_policy {
-    recrawl_behavior = "CRAWL_NEW_FOLDERS_ONLY"
-    # add new date partitions daily (new folders) and not
-    # modifying existing ones, to only crawl new folders
   }
 
   tags = var.tags

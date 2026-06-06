@@ -1,0 +1,12 @@
+---
+# ============================================================
+# NexusFlow — Monitoring Namespace
+# File: kubernetes/monitoring/namespace.yml
+# ============================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    project: nexusflow
+    component: observability

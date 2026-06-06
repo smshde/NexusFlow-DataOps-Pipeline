@@ -71,10 +71,8 @@ resource "aws_s3_bucket_ownership_controls" "buckets" {
   rule {
     object_ownership = "BucketOwnerEnforced"
     # BucketOwnerEnforced = bucket owner owns all objects
-    # disables ACLs entirely — the modern AWS standard
-    # required for all buckets created after April 2023
+    # disables ACLs entirely — the modern AWS standard required for all buckets created after April 2023
   }
-
   depends_on = [aws_s3_bucket_public_access_block.buckets]
 }
 

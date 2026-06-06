@@ -6,7 +6,7 @@
 # Consumes from MSK topics → writes micro-batches to S3 bronze.
 #
 # ⚠️ BEFORE APPLYING:
-#   Replace ECR_REGISTRY with your actual ECR registry URL
+#   Replace ECR_REGISTRY with actual ECR registry URL
 #   from: terraform output ecr_registry
 # ============================================================
 apiVersion: apps/v1
@@ -43,8 +43,10 @@ spec:
 
       containers:
         - name: kafka-consumer
-          # ⚠️ Replace ECR_REGISTRY with output from: terraform output ecr_registry
+          # ⚠️ Replace ECR_REGISTRY with output from: terraform output ecr_registry 
           image: ECR_REGISTRY/nexusflow-ingestion:latest
+          # image: xxxx.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-ingestion:latest
+
           imagePullPolicy: Always
 
           command: ["python", "kafka_consumer.py"]
@@ -63,7 +65,7 @@ spec:
                   name: nexusflow-config
                   key:  NEXUSFLOW_ENV
             - name: AWS_REGION
-              value: "ca-central-1"  # ⚠️ confirm matches your region
+              value: "ca-central-1"  # ⚠️ confirm region
             - name: S3_BRONZE_BUCKET
               value: "nexusflow-dev-lakehouse"
             - name: PYTHONUNBUFFERED
@@ -126,11 +128,9 @@ kind: ServiceAccount
 metadata:
   name: nexusflow-ingestion-sa
   namespace: kafka
-  annotations:
-    # ⚠️ Replace ACCOUNT_ID with your AWS account ID
-    # from: aws sts get-caller-identity --query Account --output text
+  annotations: 
     eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-app-irsa
-
+    # ⚠️ from: aws sts get-caller-identity --query Account --output text
 ---
 # ============================================================
 # Batch Generator CronJob — runs daily at 01:00 UTC
@@ -165,7 +165,7 @@ spec:
 
           containers:
             - name: batch-generator
-              # ⚠️ Replace ECR_REGISTRY with your ECR registry URL
+              # ⚠️ Replace ECR_REGISTRY with actual ECR registry URL
               image: ECR_REGISTRY/nexusflow-datagen:latest
               imagePullPolicy: Always
 

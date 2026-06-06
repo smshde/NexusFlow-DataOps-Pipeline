@@ -1,0 +1,183 @@
+groups:
+  # ── PIPELINE FRESHNESS ALERTS ─────────────────────────────
+  - name: nexusflow.data_freshness
+    interval: 5m
+    rules:
+      - alert: DataFreshnessWarning
+        expr: |
+          (time() - nexusflow_pipeline_last_success_timestamp) / 3600 > 6
+        for: 10m
+        labels:
+          severity: warning
+          team: data-engineering
+        annotations:
+          summary: "NexusFlow data is {{ $value | printf \"%.1f\" }}h stale (warn > 6h)"
+          description: "Pipeline last succeeded {{ $value | printf \"%.1f\" }} hours ago."
+          runbook: "https://wiki.nexusflow.io/runbooks/stale-data"
+
+      - alert: DataFreshnessCritical
+        expr: |
+          (time() - nexusflow_pipeline_last_success_timestamp) / 3600 > 24
+        for: 5m
+        labels:
+          severity: critical
+          team: data-engineering
+        annotations:
+          summary: "NexusFlow data is {{ $value | printf \"%.1f\" }}h stale (critical > 24h)"
+          runbook: "https://wiki.nexusflow.io/runbooks/stale-data"
+
+  # ── KAFKA PRODUCER ALERTS ──────────────────────────────────
+  - name: nexusflow.kafka
+    interval: 1m
+    rules:
+      - alert: KafkaProducerDown
+        expr: |
+          up{job="nexusflow-datagen"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          team: data-engineering
+        annotations:
+          summary: "Kafka producer is down"
+          description: "The NexusFlow data generator pod has been unreachable for > 5 minutes."
+
+      - alert: KafkaConsumerLagHigh
+        expr: |
+          kafka_consumer_group_lag{topic=~"orders|clickstream"} > 10000
+        for: 10m
+        labels:
+          severity: warning
+          team: data-engineering
+        annotations:
+          summary: "Kafka consumer lag high on topic {{ $labels.topic }}: {{ $value }}"
+          description: "Consumer group {{ $labels.group }} is {{ $value }} messages behind."
+
+      - alert: KafkaConsumerLagCritical
+        expr: |
+          kafka_consumer_group_lag{topic=~"orders|clickstream"} > 100000
+        for: 5m
+        labels:
+          severity: critical
+          team: data-engineering
+        annotations:
+          summary: "Kafka consumer lag CRITICAL on topic {{ $labels.topic }}: {{ $value }}"
+
+  # ── SPARK JOB ALERTS ──────────────────────────────────────
+  - name: nexusflow.spark
+    interval: 5m
+    rules:
+      - alert: SparkJobFailed
+        expr: |
+          nexusflow_spark_job_status{status="FAILED"} > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: data-engineering
+        annotations:
+          summary: "Spark job {{ $labels.job_name }} FAILED"
+          description: "EMR Serverless job {{ $labels.job_id }} failed. Check EMR logs."
+
+      - alert: SparkJobDurationHigh
+        expr: |
+          nexusflow_spark_job_duration_minutes > 120
+        for: 5m
+        labels:
+          severity: warning
+          team: data-engineering
+        annotations:
+          summary: "Spark job {{ $labels.job_name }} running > 2 hours ({{ $value | printf \"%.0f\" }}m)"
+
+  # ── DBT ALERTS ───────────────────────────────────────────
+  - name: nexusflow.dbt
+    rules:
+      - alert: DbtTestsFailed
+        expr: |
+          nexusflow_dbt_test_failures_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: data-engineering
+        annotations:
+          summary: "{{ $value }} dbt tests failed"
+          description: "dbt test failures detected. Gold layer data quality compromised."
+
+      - alert: DbtRunFailed
+        expr: |
+          nexusflow_dbt_run_status{status="error"} > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: data-engineering
+        annotations:
+          summary: "dbt run failed: {{ $labels.model }}"
+
+  # ── API ALERTS ────────────────────────────────────────────
+  - name: nexusflow.api
+    interval: 1m
+    rules:
+      - alert: ApiHighErrorRate
+        expr: |
+          rate(nexusflow_api_requests_total{status=~"5.."}[5m])
+          / rate(nexusflow_api_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: data-engineering
+        annotations:
+          summary: "API error rate > 5%: {{ $value | humanizePercentage }}"
+
+      - alert: ApiHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(nexusflow_api_request_duration_seconds_bucket[5m])
+          ) > 2.0
+        for: 10m
+        labels:
+          severity: warning
+          team: data-engineering
+        annotations:
+          summary: "API P95 latency > 2s: {{ $value | printf \"%.2f\" }}s"
+
+      - alert: ApiDown
+        expr: |
+          up{job="nexusflow-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: data-engineering
+        annotations:
+          summary: "NexusFlow Analytics API is DOWN"
+
+  # ── INFRA ALERTS ──────────────────────────────────────────
+  - name: nexusflow.infra
+    interval: 2m
+    rules:
+      - alert: EksNodeMemoryHigh
+        expr: |
+          node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "EKS node {{ $labels.instance }} memory < 10% available"
+
+      - alert: S3BucketSizeGrowthAnomaly
+        expr: |
+          deriv(aws_s3_bucket_size_bytes{bucket=~"nexusflow-.*-lakehouse"}[6h]) < 0
+        for: 30m
+        labels:
+          severity: warning
+          team: data-engineering
+        annotations:
+          summary: "S3 lakehouse bucket size is shrinking — possible accidental delete"
+
+      - alert: RedshiftQueryTimeout
+        expr: |
+          nexusflow_redshift_query_duration_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+          team: data-engineering
+        annotations:
+          summary: "Redshift query running > 5 min: {{ $labels.query_id }}"
