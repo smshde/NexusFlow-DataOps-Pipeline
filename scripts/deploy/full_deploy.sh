@@ -84,6 +84,58 @@ kubectl apply -f kubernetes/kafka/namespace.yml
 kubectl apply -f kubernetes/monitoring/namespace.yml
 pass "Namespaces ready"
 
+# ── STEP 7.5: DEPLOY STANDALONE POSTGRES FOR AIRFLOW ────
+info "Step 7.5: Deploying standalone PostgreSQL for Airflow..."
+
+kubectl apply -f - <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-postgres
+  namespace: airflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow-postgres
+  template:
+    metadata:
+      labels:
+        app: airflow-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:13
+          env:
+            - name: POSTGRES_USER
+              value: airflow
+            - name: POSTGRES_PASSWORD
+              value: airflow
+            - name: POSTGRES_DB
+              value: airflow
+          ports:
+            - containerPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-postgres
+  namespace: airflow
+spec:
+  selector:
+    app: airflow-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+EOF
+
+kubectl wait --for=condition=ready pod \
+  -l app=airflow-postgres \
+  -n airflow \
+  --timeout=120s
+
+pass "Standalone PostgreSQL ready"
+
 # ── STEP 8: CREATE SECRETS ──────────────────────────────
 info "Step 8: Creating Kubernetes secrets..."
 for NS in nexusflow kafka airflow; do
@@ -121,9 +173,11 @@ helm repo add apache-airflow \
   https://airflow.apache.org 2>/dev/null || true
 helm repo update
 helm upgrade --install airflow apache-airflow/airflow \
+  --version 1.16.0 \
   --namespace airflow \
   --values kubernetes/airflow/values.yml \
-  --wait --timeout 15m
+  --timeout 25m \
+  --wait
 pass "Airflow deployed"
 
 # ── STEP 11: DEPLOY APPLICATION PODS ────────────────────

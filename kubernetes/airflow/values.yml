@@ -1,20 +1,36 @@
 # ============================================================
 # NexusFlow — Airflow Helm Values
 # File: kubernetes/airflow/values.yml
+
+# webserver     → scheduler → triggerer → dags →
+# logs          → data      → postgresql → redis →
+# env           → serviceAccount
 # ============================================================
 
-airflowVersion: "2.9.0"
+airflowVersion: "2.10.5"
 executor: LocalExecutor
 
 webserver:
   replicas: 1
   resources:
     requests:
-      cpu: 500m
-      memory: 1Gi
+      cpu: 100m
+      memory: 256Mi
     limits:
-      cpu: 1
-      memory: 2Gi
+      cpu: 500m
+      memory: 512Mi
+  startupProbe:
+    timeoutSeconds: 30
+    failureThreshold: 20
+    periodSeconds: 10
+  livenessProbe:
+    timeoutSeconds: 30
+    failureThreshold: 20
+    periodSeconds: 10
+  readinessProbe:
+    timeoutSeconds: 30
+    failureThreshold: 20
+    periodSeconds: 10
   defaultUser:
     enabled: true
     role: Admin
@@ -28,17 +44,19 @@ scheduler:
   replicas: 1
   resources:
     requests:
-      cpu: 500m
-      memory: 1Gi
+      cpu: 100m
+      memory: 256Mi
     limits:
-      cpu: 1
-      memory: 2Gi
+      cpu: 500m
+      memory: 512Mi
+
+triggerer:
+  enabled: false
 
 dags:
   gitSync:
     enabled: true
-    # ⚠️ actual GitHub repo URL
-    repo: https://github.com/smshde/NexusFlow-DataOps-Pipeline.git
+    repo: https://github.com/smshde/NexusFlow-DataOps-Pipeline.git # ⚠️ 
     branch: main
     subPath: airflow/dags
 
@@ -46,10 +64,18 @@ logs:
   persistence:
     enabled: false
 
+# database connection
+data:
+  metadataConnection:
+    user: airflow
+    pass: airflow
+    host: airflow-postgres
+    port: 5432 
+    db: airflow
+    sslmode: disable
+
 postgresql:
-  enabled: true
-  auth:
-    password: nexusflow2026   # DEMO CREDENTIALS ⚠️ change for prod
+  enabled: false
 
 redis:
   enabled: false
@@ -61,14 +87,11 @@ env:
     value: "dev"
   - name: AWS_REGION
     value: "ca-central-1"
-
+        
 serviceAccount:
   create: true
   name: airflow-scheduler
   annotations:
-    # ⚠️ Replace ACCOUNT_ID after terraform apply or use a variable
-    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-airflow-irsa
+    eks.amazonaws.com/role-arn: arn:aws:iam::167868295416:role/nexusflow-dev-airflow-irsa # ⚠️ 
 
-extraEnvFrom:
-  - secretRef:
-      name: nexusflow-secrets
+

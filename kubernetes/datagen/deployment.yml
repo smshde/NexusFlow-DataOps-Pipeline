@@ -93,7 +93,7 @@ spec:
 
       containers:
         - name: datagen
-          image: #ECR_REGISTRY/nexusflow-datagen:IMAGE_SHA
+          image: #167868295416.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-datagen:IMAGE_SHA
           imagePullPolicy: Always
           command: ["python", "kafka_producer.py"]
           args:
@@ -173,7 +173,7 @@ spec:
           containers:
             - name: datagen-batch
               image:                                  
-              # image: xxxx.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-datagen:latest (# ⚠️ ECR_REGISTRY/nexusflow-datagen:IMAGE_SHA)
+              # image: xxxx.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-datagen:latest (# ⚠️ 167868295416.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-datagen:IMAGE_SHA)
               command: ["python", "ecommerce_generator.py"]
               args:
                 - "--mode=batch"
@@ -220,4 +220,4 @@ metadata:
   namespace: nexusflow
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::167868295416:role/nexusflow-dev-datagen-role
-    # eks.amazonaws.com/role-arn: arn:aws:iam::⚠️ACCOUNT_ID:role/nexusflow-dev-datagen-role
+    # eks.amazonaws.com/role-arn: arn:aws:iam::⚠️167868295416:role/nexusflow-dev-datagen-role

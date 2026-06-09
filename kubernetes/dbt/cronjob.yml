@@ -31,8 +31,7 @@ spec:
           serviceAccountName: nexusflow-dbt-sa
           containers:
             - name: dbt
-              # ⚠️ Replace ECR_REGISTRY with your ECR registry URL
-              image: ECR_REGISTRY/nexusflow-dbt:latest
+              image: 167868295416.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-dbt:latest # ⚠️
               imagePullPolicy: Always
               command: ["/bin/bash", "-c"]
               args:
@@ -69,6 +68,5 @@ kind: ServiceAccount
 metadata:
   name: nexusflow-dbt-sa
   namespace: nexusflow
-  annotations:
-    # ⚠️ Replace ACCOUNT_ID with your AWS account ID
-    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-dbt-irsa
+  annotations: 
+    eks.amazonaws.com/role-arn: arn:aws:iam::167868295416:role/nexusflow-dev-dbt-irsa # ⚠️

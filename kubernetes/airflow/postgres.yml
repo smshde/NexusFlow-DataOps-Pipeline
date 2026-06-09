@@ -1,0 +1,60 @@
+# FILE: kubernetes/airflow/postgres.yml
+# Standalone K8s Manifest for PostgreSQL used by Airflow. 
+
+# This replaces the Helm-managed PostgreSQL deployment that was previously used in the Airflow Helm chart. 
+# By deploying PostgreSQL separately, we have more control over its configuration and lifecycle, and it can 
+# be managed independently of the Airflow deployment. This manifest includes a Deployment for PostgreSQL and 
+# a Service to expose it within the Kubernetes cluster.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-postgres
+  namespace: airflow
+  labels:
+    app: airflow-postgres
+    project: nexusflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow-postgres
+  template:
+    metadata:
+      labels:
+        app: airflow-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:13
+          env:
+            - name: POSTGRES_USER
+              value: airflow
+            - name: POSTGRES_PASSWORD
+              value: airflow
+            - name: POSTGRES_DB
+              value: airflow
+          ports:
+            - containerPort: 5432
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-postgres
+  namespace: airflow
+  labels:
+    project: nexusflow
+spec:
+  selector:
+    app: airflow-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

@@ -6,7 +6,7 @@
 # Consumes from MSK topics → writes micro-batches to S3 bronze.
 #
 # ⚠️ BEFORE APPLYING:
-#   Replace ECR_REGISTRY with actual ECR registry URL
+#   Replace 167868295416.dkr.ecr.ca-central-1.amazonaws.com with actual ECR registry URL
 #   from: terraform output ecr_registry
 # ============================================================
 apiVersion: apps/v1
@@ -43,9 +43,8 @@ spec:
 
       containers:
         - name: kafka-consumer
-          # ⚠️ Replace ECR_REGISTRY with output from: terraform output ecr_registry 
-          image: ECR_REGISTRY/nexusflow-ingestion:latest
-          # image: xxxx.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-ingestion:latest
+          # ⚠️ Replace 167868295416.dkr.ecr.ca-central-1.amazonaws.com with output from: terraform output ecr_registry 
+          image: 167868295416.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-ingestion:latest
 
           imagePullPolicy: Always
 
@@ -129,7 +128,7 @@ metadata:
   name: nexusflow-ingestion-sa
   namespace: kafka
   annotations: 
-    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-app-irsa
+    eks.amazonaws.com/role-arn: arn:aws:iam::167868295416:role/nexusflow-dev-app-irsa
     # ⚠️ from: aws sts get-caller-identity --query Account --output text
 ---
 # ============================================================
@@ -165,8 +164,7 @@ spec:
 
           containers:
             - name: batch-generator
-              # ⚠️ Replace ECR_REGISTRY with actual ECR registry URL
-              image: ECR_REGISTRY/nexusflow-datagen:latest
+              image: 167868295416.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-datagen:latest # ⚠️ 
               imagePullPolicy: Always
 
               command: ["python", "batch_generator.py"]
