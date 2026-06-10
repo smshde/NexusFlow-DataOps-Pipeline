@@ -28,6 +28,7 @@ import logging
 import signal
 import time
 import boto3
+from aws_msk_iam_sasl_signer import MSKAuthTokenProvider
 from datetime import datetime, timezone
 from collections import defaultdict
 from typing import Dict, List
@@ -154,6 +155,11 @@ class S3MicroBatchWriter:
         for topic, count in self._stats.items():
             logger.info(f"   {topic}: {count:,} messages written to S3")
 
+def _get_msk_token(config):
+    """Generate MSK IAM OAuth token for librdkafka."""
+    region = os.getenv("AWS_REGION", "ca-central-1")
+    token, expiry_ms = MSKAuthTokenProvider.generate_auth_token(region)
+    return token, expiry_ms / 1000
 
 class NexusFlowKafkaConsumer:
     """
@@ -200,14 +206,9 @@ class NexusFlowKafkaConsumer:
             "fetch.min.bytes":           1,
             "fetch.wait.max.ms":         500,
             # IAM auth for MSK
-            "security.protocol":         "SASL_SSL",
-            "sasl.mechanism":            "AWS_MSK_IAM",
-            "sasl.jaas.config":          (
-                "software.amazon.msk.auth.iam.IAMLoginModule required;"
-            ),
-            "sasl.client.callback.handler.class": (
-                "software.amazon.msk.auth.iam.IAMClientCallbackHandler"
-            ),
+            "security.protocol":          "SASL_SSL",
+            "sasl.mechanisms":            "OAUTHBEARER",
+            "oauth_cb":                   _get_msk_token,
         }
 
         self.consumer = Consumer(consumer_conf)

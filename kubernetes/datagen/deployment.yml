@@ -28,39 +28,6 @@ data:
   CLICKS_PER_SECOND:    "50"
 
 ---
-# Secret reference (populated by External Secrets Operator from AWS Secrets Manager)
-apiVersion: external-secrets.io/v1beta1
-kind: ExternalSecret
-metadata:
-  name: nexusflow-secrets
-  namespace: nexusflow
-spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    name: aws-secrets-manager
-    kind: ClusterSecretStore
-  target:
-    name: nexusflow-secrets
-    creationPolicy: Owner
-  data:
-    - secretKey: MSK_BOOTSTRAP_SERVERS
-      remoteRef:
-        key: nexusflow/dev/msk
-        property: bootstrap_servers
-    - secretKey: REDSHIFT_HOST
-      remoteRef:
-        key: nexusflow/dev/redshift
-        property: host
-    - secretKey: REDSHIFT_PASSWORD
-      remoteRef:
-        key: nexusflow/dev/redshift
-        property: password
-    - secretKey: SCHEMA_REGISTRY_URL
-      remoteRef:
-        key: nexusflow/dev/schema-registry
-        property: url
-
----
 # Data Generator Deployment — continuous streaming producer
 apiVersion: apps/v1
 kind: Deployment
@@ -93,7 +60,7 @@ spec:
 
       containers:
         - name: datagen
-          image: #167868295416.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-datagen:IMAGE_SHA
+          image: 167868295416.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-datagen:latest
           imagePullPolicy: Always
           command: ["python", "kafka_producer.py"]
           args:
@@ -117,17 +84,17 @@ spec:
               cpu:    "1"
               memory: "2Gi"
 
-          livenessProbe:
-            exec:
-              command: ["python", "-c", "import os; exit(0 if os.path.exists('/tmp/producer_alive') else 1)"]
-            initialDelaySeconds: 30
-            periodSeconds:       30
+          # livenessProbe:
+          #   exec:
+          #     command: ["python", "-c", "import os; exit(0 if os.path.exists('/tmp/producer_alive') else 1)"]
+          #   initialDelaySeconds: 30
+          #   periodSeconds:       30
 
-          readinessProbe:
-            exec:
-              command: ["python", "-c", "import os; exit(0 if os.path.exists('/tmp/producer_ready') else 1)"]
-            initialDelaySeconds: 15
-            periodSeconds:       10
+          # readinessProbe:
+          #   exec:
+          #     command: ["python", "-c", "import os; exit(0 if os.path.exists('/tmp/producer_ready') else 1)"]
+          #   initialDelaySeconds: 15
+          #   periodSeconds:       10
 
           volumeMounts:
             - name: tmp
@@ -172,8 +139,8 @@ spec:
           serviceAccountName: nexusflow-datagen-sa
           containers:
             - name: datagen-batch
-              image:                                  
-              # image: xxxx.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-datagen:latest (# ⚠️ 167868295416.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-datagen:IMAGE_SHA)
+              image: 167868295416.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-datagen:latest                                 
+              # ( ⚠️ )
               command: ["python", "ecommerce_generator.py"]
               args:
                 - "--mode=batch"
@@ -212,12 +179,13 @@ spec:
                 sizeLimit: 10Gi
 
 ---
-# ServiceAccount with IAM role annotation (IRSA)
+# ============================================================
+# Service Account with IRSA for MSK + S3 access
+# ============================================================
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: nexusflow-datagen-sa
   namespace: nexusflow
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::167868295416:role/nexusflow-dev-datagen-role
-    # eks.amazonaws.com/role-arn: arn:aws:iam::⚠️167868295416:role/nexusflow-dev-datagen-role
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-app-irsa

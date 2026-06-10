@@ -73,6 +73,9 @@ find kubernetes/ -name "*.yml" -exec \
   "s|ECR_REGISTRY|$ECR_REGISTRY|g" {} \; 2>/dev/null || true
 find kubernetes/ -name "*.yml" -exec \
   sed -i '' \
+  "s|IMAGE_SHA|latest|g" {} \; 2>/dev/null || true 
+find kubernetes/ -name "*.yml" -exec \
+  sed -i '' \
   "s|ACCOUNT_ID|$AWS_ACCOUNT_ID|g" {} \; 2>/dev/null || true
 pass "Manifests updated"
 
@@ -87,52 +90,17 @@ pass "Namespaces ready"
 # ── STEP 7.5: DEPLOY STANDALONE POSTGRES FOR AIRFLOW ────
 info "Step 7.5: Deploying standalone PostgreSQL for Airflow..."
 
-kubectl apply -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: airflow-postgres
-  namespace: airflow
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: airflow-postgres
-  template:
-    metadata:
-      labels:
-        app: airflow-postgres
-    spec:
-      containers:
-        - name: postgres
-          image: postgres:13
-          env:
-            - name: POSTGRES_USER
-              value: airflow
-            - name: POSTGRES_PASSWORD
-              value: airflow
-            - name: POSTGRES_DB
-              value: airflow
-          ports:
-            - containerPort: 5432
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: airflow-postgres
-  namespace: airflow
-spec:
-  selector:
-    app: airflow-postgres
-  ports:
-    - port: 5432
-      targetPort: 5432
-EOF
+kubectl apply -f kubernetes/airflow/postgres.yml
 
+  # Wait for postgres to be ACTUALLY ready (not just running)
+echo "Waiting for PostgreSQL to be ready..."
 kubectl wait --for=condition=ready pod \
   -l app=airflow-postgres \
   -n airflow \
   --timeout=120s
+
+  # Extra buffer — let postgres fully initialize
+sleep 15
 
 pass "Standalone PostgreSQL ready"
 
@@ -152,8 +120,166 @@ kubectl delete secret alertmanager-slack \
 kubectl create secret generic alertmanager-slack \
   --namespace monitoring \
   --from-literal=slack_api_url="$SLACK_WEBHOOK_URL"
+  
+# Airflow Fernet key secret 
+pip install cryptography --quiet 2>/dev/null || true
+FERNET=$(python3 -c \
+  "from cryptography.fernet import Fernet; \
+  print(Fernet.generate_key().decode())")
+
+kubectl delete secret airflow-fernet-secret \
+  -n airflow 2>/dev/null || true
+
+kubectl create secret generic airflow-fernet-secret \
+  --namespace airflow \
+  --from-literal=fernet-key="$FERNET"
+pass "Fernet key secret created"
 
 pass "Secrets created"
+
+# ── STEP 8.5: IRSA TRUST POLICIES ───────────────────────
+OIDC_ID=$(aws eks describe-cluster \
+  --name $EKS_CLUSTER_NAME \
+  --region $AWS_REGION \
+  --query 'cluster.identity.oidc.issuer' \
+  --output text | cut -d'/' -f5)
+
+aws iam update-assume-role-policy \
+  --role-name nexusflow-dev-app-irsa \
+  --policy-document "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [{
+      \"Effect\": \"Allow\",
+      \"Principal\": {
+        \"Federated\": \"arn:aws:iam::${AWS_ACCOUNT_ID}:oidc-provider/oidc.eks.ca-central-1.amazonaws.com/id/${OIDC_ID}\"
+      },
+      \"Action\": \"sts:AssumeRoleWithWebIdentity\",
+      \"Condition\": {
+        \"StringLike\": {
+          \"oidc.eks.ca-central-1.amazonaws.com/id/${OIDC_ID}:sub\": \"system:serviceaccount:*:nexusflow-*\"
+        }
+      }
+    }]
+  }"
+
+kubectl annotate serviceaccount nexusflow-datagen-sa \
+  -n nexusflow \
+  eks.amazonaws.com/role-arn=arn:aws:iam::${AWS_ACCOUNT_ID}:role/nexusflow-dev-app-irsa \
+  --overwrite 2>/dev/null || true
+
+kubectl annotate serviceaccount nexusflow-ingestion-sa \
+  -n kafka \
+  eks.amazonaws.com/role-arn=arn:aws:iam::${AWS_ACCOUNT_ID}:role/nexusflow-dev-app-irsa \
+  --overwrite 2>/dev/null || true
+
+# ── STEP 8.6: MSK SECURITY GROUP ────────────────────────
+EKS_SG=$(aws eks describe-cluster \
+  --name $EKS_CLUSTER_NAME \
+  --region $AWS_REGION \
+  --query 'cluster.resourcesVpcConfig.clusterSecurityGroupId' \
+  --output text)
+
+MSK_SG=$(aws ec2 describe-security-groups \
+  --filters "Name=tag:Name,Values=*msk*" \
+  --region $AWS_REGION \
+  --query 'SecurityGroups[0].GroupId' \
+  --output text)
+
+aws ec2 authorize-security-group-ingress \
+  --group-id $MSK_SG \
+  --protocol tcp \
+  --port 9098 \
+  --source-group $EKS_SG \
+  --region $AWS_REGION 2>/dev/null || true
+
+aws ec2 authorize-security-group-ingress \
+  --group-id $MSK_SG \
+  --protocol tcp \
+  --port 9094 \
+  --source-group $EKS_SG \
+  --region $AWS_REGION 2>/dev/null || true
+
+# ── STEP 8.7: CREATE KAFKA TOPICS ───────────────────────
+CLUSTER_ARN=$(aws kafka list-clusters-v2 \
+  --region $AWS_REGION \
+  --query 'ClusterInfoList[0].ClusterArn' \
+  --output text)
+
+for TOPIC in orders clickstream inventory-events \
+             product-reviews user-sessions dlq-orders; do
+  aws kafka create-topic \
+    --cluster-arn $CLUSTER_ARN \
+    --topic-name $TOPIC \
+    --replication-factor 2 \
+    --partition-count 6 \
+    --region $AWS_REGION 2>/dev/null \
+    && echo "  ✅ Created: $TOPIC" \
+    || echo "  ⚠️  Exists: $TOPIC"
+done
+
+# ── STEP 8.8: S3 IAM POLICY ─────────────────────────────
+aws iam put-role-policy \
+  --role-name nexusflow-dev-app-irsa \
+  --policy-name nexusflow-s3-policy \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation"
+      ],
+      "Resource": [
+        "arn:aws:s3:::nexusflow-dev-*",
+        "arn:aws:s3:::nexusflow-dev-*/*"
+      ]
+    }]
+  }' 2>/dev/null || true
+
+# ── STEP 8.9: KAFKA CONSUMER IAM POLICY ─────────────────
+aws iam put-role-policy \
+  --role-name nexusflow-dev-app-irsa \
+  --policy-name nexusflow-kafka-consumer-policy \
+  --policy-document "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [
+      {
+        \"Effect\": \"Allow\",
+        \"Action\": [
+          \"kafka-cluster:Connect\",
+          \"kafka-cluster:AlterCluster\",
+          \"kafka-cluster:DescribeCluster\"
+        ],
+        \"Resource\": \"$(aws kafka list-clusters-v2 \
+          --region $AWS_REGION \
+          --query 'ClusterInfoList[0].ClusterArn' \
+          --output text)\"
+      },
+      {
+        \"Effect\": \"Allow\",
+        \"Action\": [
+          \"kafka-cluster:ReadData\",
+          \"kafka-cluster:WriteData\",
+          \"kafka-cluster:DescribeTopic\",
+          \"kafka-cluster:CreateTopic\"
+        ],
+        \"Resource\": \"arn:aws:kafka:ca-central-1:${AWS_ACCOUNT_ID}:topic/nexusflow-dev-kafka/*\"
+      },
+      {
+        \"Effect\": \"Allow\",
+        \"Action\": [
+          \"kafka-cluster:AlterGroup\",
+          \"kafka-cluster:DescribeGroup\"
+        ],
+        \"Resource\": \"arn:aws:kafka:ca-central-1:${AWS_ACCOUNT_ID}:group/nexusflow-dev-kafka/*\"
+      }
+    ]
+  }" 2>/dev/null || true
+
+pass "IRSA, MSK SG, Kafka topics, IAM policies configured"
 
 # ── STEP 9: DEPLOY MONITORING ───────────────────────────
 info "Step 9: Deploying Prometheus + Grafana..."
@@ -169,15 +295,18 @@ pass "Monitoring deployed"
 
 # ── STEP 10: DEPLOY AIRFLOW ──────────────────────────────
 info "Step 10: Deploying Airflow..."
+
 helm repo add apache-airflow \
   https://airflow.apache.org 2>/dev/null || true
 helm repo update
+
 helm upgrade --install airflow apache-airflow/airflow \
   --version 1.16.0 \
   --namespace airflow \
   --values kubernetes/airflow/values.yml \
-  --timeout 25m \
+  --timeout 30m \
   --wait
+
 pass "Airflow deployed"
 
 # ── STEP 11: DEPLOY APPLICATION PODS ────────────────────

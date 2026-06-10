@@ -59,11 +59,6 @@ spec:
 
           env:
             - name: AWS_REGION
-              valueFrom:
-                configMapKeyRef:
-                  name: nexusflow-config
-                  key:  NEXUSFLOW_ENV
-            - name: AWS_REGION
               value: "ca-central-1"  # ⚠️ confirm region
             - name: S3_BRONZE_BUCKET
               value: "nexusflow-dev-lakehouse"

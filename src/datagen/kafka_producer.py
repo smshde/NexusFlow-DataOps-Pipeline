@@ -19,6 +19,8 @@ import os
 import sys
 import random
 import uuid
+from confluent_kafka.admin import AdminClient, NewTopic
+from aws_msk_iam_sasl_signer import MSKAuthTokenProvider
 from datetime import datetime, timezone
 from dataclasses import asdict
 from typing import Optional
@@ -74,6 +76,41 @@ CLICKSTREAM_AVRO_SCHEMA = json.dumps({
     ]
 })
 
+def _get_msk_token(config):
+    """Generate MSK IAM OAuth token for librdkafka."""
+    region = os.getenv("AWS_REGION", "ca-central-1")
+    token, expiry_ms = MSKAuthTokenProvider.generate_auth_token(region)
+    return token, expiry_ms / 1000  # convert ms to seconds
+
+def create_topics(bootstrap_servers: str) -> None:
+    """Create Kafka topics if they do not exist."""
+    admin_conf = {
+        "bootstrap.servers":           bootstrap_servers,
+        "security.protocol":           "SASL_SSL",
+        "sasl.mechanisms":             "OAUTHBEARER",
+        "oauth_cb":                    _get_msk_token,
+        "socket.timeout.ms":           30000,
+        "request.timeout.ms":          30000,
+        "metadata.request.timeout.ms": 30000,
+    }
+    admin = AdminClient(admin_conf)
+    topics = [
+        NewTopic("orders",           num_partitions=6,  replication_factor=2),
+        NewTopic("clickstream",      num_partitions=12, replication_factor=2),
+        NewTopic("inventory-events", num_partitions=4,  replication_factor=2),
+        NewTopic("product-reviews",  num_partitions=4,  replication_factor=2),
+        NewTopic("user-sessions",    num_partitions=8,  replication_factor=2),
+    ]
+    fs = admin.create_topics(topics, request_timeout=30)
+    for topic, f in fs.items():
+        try:
+            f.result()
+            print(f"✅ Topic created: {topic}")
+        except Exception as e:
+            if "already exists" in str(e).lower():
+                print(f"✅ Topic exists: {topic}")
+            else:
+                print(f"⚠️  Topic error {topic}: {e}")
 
 class NexusFlowProducer:
     """Kafka producer for NexusFlow streaming events."""
@@ -101,14 +138,9 @@ class NexusFlowProducer:
             "statistics.interval.ms":       60000,          # Log stats every 60s
             "client.id":                    "nexusflow-producer",
             # IAM auth for MSK
-            "security.protocol":            "SASL_SSL",     # SASL_SSL for secure authentication
-            "sasl.mechanism":               "AWS_MSK_IAM",  # AWS IAM for authentication
-            "sasl.jaas.config":             (   
-                "software.amazon.msk.auth.iam.IAMLoginModule required;"
-            ),
-            "sasl.client.callback.handler.class": (
-                "software.amazon.msk.auth.iam.IAMClientCallbackHandler"
-            ),
+            "security.protocol":          "SASL_SSL",
+            "sasl.mechanisms":            "OAUTHBEARER",
+            "oauth_cb":                   _get_msk_token,
         }
 
         self.producer = Producer(producer_conf)
@@ -315,6 +347,8 @@ if __name__ == "__main__":
     parser.add_argument("--orders-per-second", type=float, default=5.0)
     parser.add_argument("--clicks-per-second", type=float, default=50.0)
     args = parser.parse_args()
+
+    create_topics(args.bootstrap_servers)
 
     producer = NexusFlowProducer(
         bootstrap_servers=args.bootstrap_servers,

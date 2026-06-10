@@ -26,7 +26,7 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:13
+          image: postgres:15  # upgraded from 13 to 15
           env:
             - name: POSTGRES_USER
               value: airflow
@@ -34,6 +34,8 @@ spec:
               value: airflow
             - name: POSTGRES_DB
               value: airflow
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           ports:
             - containerPort: 5432
           resources:
@@ -43,6 +45,15 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+          readinessProbe:             # wait until postgres actually ready
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - airflow
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 10
 
 ---
 apiVersion: v1

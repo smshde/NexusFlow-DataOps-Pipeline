@@ -5,32 +5,45 @@
 # webserver     → scheduler → triggerer → dags →
 # logs          → data      → postgresql → redis →
 # env           → serviceAccount
+
+# Chart version: 1.16.0 (Airflow 2.10.5) - Pinned to avoid version drift
 # ============================================================
 
 airflowVersion: "2.10.5"
+defaultAirflowTag: "2.10.5"
+
+# Explicit image override — belt and suspenders
+images:
+  airflow:
+    repository: apache/airflow
+    tag: "2.10.5"
+    pullPolicy: IfNotPresent
+
 executor: LocalExecutor
 
+# ── WEBSERVER ─────────────────────────────────────────────
 webserver:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: 200m            # increased from 100m — prevents OOM
+      memory: 512Mi       # increased from 256Mi — prevents OOM 
     limits:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 1
+      memory: 1Gi
+  # Extended probes — give more time to start and recover
   startupProbe:
     timeoutSeconds: 30
-    failureThreshold: 20
+    failureThreshold: 30    # 30 × 10s = 5 min startup window
     periodSeconds: 10
   livenessProbe:
     timeoutSeconds: 30
-    failureThreshold: 20
-    periodSeconds: 10
+    failureThreshold: 10
+    periodSeconds: 15
   readinessProbe:
     timeoutSeconds: 30
-    failureThreshold: 20
-    periodSeconds: 10
+    failureThreshold: 10
+    periodSeconds: 15
   defaultUser:
     enabled: true
     role: Admin
@@ -40,31 +53,37 @@ webserver:
     lastName: Flow
     password: nexusflow2026   # DEMO CREDENTIALS ⚠️ change for prod
 
+# ── SCHEDULER ─────────────────────────────────────────────
 scheduler:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
+      cpu: 200m
       memory: 512Mi
+    limits:
+      cpu: 1
+      memory: 1Gi
 
+# ── TRIGGERER — disabled for LocalExecutor ────────────────
 triggerer:
   enabled: false
 
+# ── DAGS ──────────────────────────────────────────────────
 dags:
   gitSync:
     enabled: true
     repo: https://github.com/smshde/NexusFlow-DataOps-Pipeline.git # ⚠️ 
     branch: main
     subPath: airflow/dags
+    period: 60s         # sync every 60 seconds
+    wait: 60            # wait 60s before first sync
 
+# ── LOGS ──────────────────────────────────────────────────
 logs:
   persistence:
     enabled: false
 
-# database connection
+# ── DATABASE CONNECTION ───────────────────────────────────
 data:
   metadataConnection:
     user: airflow
@@ -74,12 +93,15 @@ data:
     db: airflow
     sslmode: disable
 
+# ── POSTGRESQL — disabled, using standalone pod ───────────
 postgresql:
   enabled: false
 
+# ── REDIS — not needed for LocalExecutor ─────────────────
 redis:
   enabled: false
 
+# ── ENVIRONMENT VARIABLES ─────────────────────────────────
 env:
   - name: AIRFLOW__CORE__LOAD_EXAMPLES
     value: "false"
@@ -87,7 +109,16 @@ env:
     value: "dev"
   - name: AWS_REGION
     value: "ca-central-1"
-        
+  - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+    value: "postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow"
+  - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+    value: "postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow"
+  - name: AIRFLOW__WEBSERVER__SECRET_KEY
+    value: "nexusflow-secret-key-2026"
+  - name: AIRFLOW__CORE__FERNET_KEY
+    value: "aJfdlCJjZwddeCQgyUZwlHJqmgqfmjBKbYQUJm29HDo=" # Demo only.for prod,generate a secure random key for airflow password encryption
+
+ # ── SERVICE ACCOUNT ───────────────────────────────────────       
 serviceAccount:
   create: true
   name: airflow-scheduler
