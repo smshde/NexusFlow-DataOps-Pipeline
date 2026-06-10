@@ -59,6 +59,16 @@ for SERVICE in datagen ingestion serving; do
 done
 pass "All images in ECR"
 
+# Building dbt image — uses repo root as context for dbt_project/
+info "  Building nexusflow-dbt..."
+docker buildx build \
+  --platform linux/amd64 \
+  -t $ECR_REGISTRY/nexusflow-dbt:latest \
+  -f src/dbt/Dockerfile \
+  . \
+  --push
+pass "  nexusflow-dbt pushed"
+
 # ── STEP 5: UPLOAD SPARK SCRIPTS ────────────────────────
 info "Step 5: Uploading Spark scripts to S3..."
 aws s3 cp src/processing/bronze_to_silver.py \
@@ -314,7 +324,7 @@ info "Step 11: Deploying application pods..."
 kubectl apply -f kubernetes/datagen/deployment.yml
 kubectl apply -f kubernetes/kafka/kafka-connect-deployment.yml
 kubectl apply -f kubernetes/dbt/cronjob.yml
-kubectl apply -f kubernetes/dashboard/ 2>/dev/null || true
+kubectl apply -f kubernetes/dashboard/deployment.yml 2>/dev/null || true
 pass "Application pods deployed"
 
 # ── STEP 12: WAIT FOR PODS ──────────────────────────────
