@@ -29,7 +29,7 @@ grafana:
 prometheus:
   prometheusSpec:
     replicas: 1
-    retention: 7d
+    retention: 24h  # reduced from 7days, saves memory and storage space
     resources:
       requests:
         cpu: 200m
@@ -37,12 +37,7 @@ prometheus:
       limits:
         cpu: 1
         memory: 2Gi
-    storageSpec:
-      volumeClaimTemplate:
-        spec:
-          resources:
-            requests:
-              storage: 10Gi
+    storageSpec: {}
     additionalScrapeConfigs:
       - job_name: nexusflow-pods
         kubernetes_sd_configs:

@@ -1,0 +1,70 @@
+# ============================================================
+# NexusFlow — FastAPI Dashboard Deployment
+# File: kubernetes/dashboard/deployment.yml
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexusflow-serving
+  namespace: nexusflow
+  labels:
+    app: serving
+    project: nexusflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: serving
+  template:
+    metadata:
+      labels:
+        app: serving
+        project: nexusflow
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8000"
+    spec:
+      serviceAccountName: nexusflow-serving-sa
+      containers:
+        - name: serving
+          image: ECR_REGISTRY/nexusflow-serving:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: AWS_REGION
+              value: "ca-central-1"
+            - name: REDSHIFT_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: nexusflow-secrets
+                  key: REDSHIFT_HOST
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexusflow-serving
+  namespace: nexusflow
+spec:
+  selector:
+    app: serving
+  ports:
+    - port: 80
+      targetPort: 8000
+  type: LoadBalancer
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexusflow-serving-sa
+  namespace: nexusflow
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-app-irsa
