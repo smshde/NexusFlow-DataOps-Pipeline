@@ -1,5 +1,5 @@
 
-# ✅  needs ECR URL update
+# Kubernetes manifests for NexusFlow Data Generator workloads
 ---
 # Namespace for all NexusFlow application workloads
 apiVersion: v1
@@ -60,7 +60,7 @@ spec:
 
       containers:
         - name: datagen
-          image: 167868295416.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-datagen:latest
+          image: ECR_REGISTRY/nexusflow-datagen:latest
           imagePullPolicy: Always
           command: ["python", "kafka_producer.py"]
           args:
@@ -139,7 +139,7 @@ spec:
           serviceAccountName: nexusflow-datagen-sa
           containers:
             - name: datagen-batch
-              image: 167868295416.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-datagen:latest                                 
+              image: ECR_REGISTRY/nexusflow-datagen:latest                                 
               # ( ⚠️ )
               command: ["python", "ecommerce_generator.py"]
               args:

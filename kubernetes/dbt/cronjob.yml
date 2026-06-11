@@ -31,7 +31,7 @@ spec:
           serviceAccountName: nexusflow-dbt-sa
           containers:
             - name: dbt
-              image: 167868295416.dkr.ecr.ca-central-1.amazonaws.com/nexusflow-dbt:latest # ⚠️
+              image: ECR_REGISTRY/nexusflow-dbt:latest # ⚠️
               imagePullPolicy: Always
               command: ["/bin/bash", "-c"]
               args:
