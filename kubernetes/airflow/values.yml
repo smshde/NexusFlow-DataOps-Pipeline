@@ -123,6 +123,6 @@ serviceAccount:
   create: true
   name: airflow-scheduler
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::167868295416:role/nexusflow-dev-airflow-irsa # ⚠️ 
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-airflow-irsa # ⚠️ 
 
 

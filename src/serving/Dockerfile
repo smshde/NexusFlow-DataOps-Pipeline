@@ -21,4 +21,4 @@ USER nexusflow
 EXPOSE 8000
 
 ENTRYPOINT ["uvicorn"]
-CMD ["main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["fastapi_main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

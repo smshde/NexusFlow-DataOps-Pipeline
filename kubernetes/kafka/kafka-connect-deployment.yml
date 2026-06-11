@@ -123,7 +123,7 @@ metadata:
   name: nexusflow-ingestion-sa
   namespace: kafka
   annotations: 
-    eks.amazonaws.com/role-arn: arn:aws:iam::167868295416:role/nexusflow-dev-app-irsa
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-app-irsa
     # ⚠️ from: aws sts get-caller-identity --query Account --output text
 ---
 # ============================================================

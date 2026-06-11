@@ -4,17 +4,17 @@ nexusflow:
 
     dev:
       type: redshift
+      method: iam
+      cluster_id: nexusflow-dev-wg
       host:     "{{ env_var('REDSHIFT_HOST') }}"
       port:     5439
       dbname:   nexusflow
-      user:     "{{ env_var('REDSHIFT_USER', 'nexusflow_admin') }}"
-      password: "{{ env_var('REDSHIFT_PASSWORD') }}"
+      user:     nexusflow_admin
       schema:   dbt_dev
       threads:  4
       keepalives_idle: 240
       connect_timeout: 10
-      sslmode:  require
-      ra3_node: true                # Enable cross-database queries
+      ra3_node: true
       search_path: gold,silver,bronze,public
 
     prod:

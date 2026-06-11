@@ -69,4 +69,4 @@ metadata:
   name: nexusflow-dbt-sa
   namespace: nexusflow
   annotations: 
-    eks.amazonaws.com/role-arn: arn:aws:iam::167868295416:role/nexusflow-dev-dbt-irsa # ⚠️
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-dbt-irsa # ⚠️

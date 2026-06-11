@@ -123,6 +123,7 @@ for NS in nexusflow kafka airflow; do
     --from-literal=MSK_BOOTSTRAP_SERVERS="$MSK_BOOTSTRAP_SERVERS" \
     --from-literal=REDSHIFT_HOST="$REDSHIFT_HOST" \
     --from-literal=AWS_REGION="$REGION"
+    --from-literal=REDSHIFT_USER="nexusflow_admin" \
 done
 # Create dedicated AlertManager secret
 kubectl delete secret alertmanager-slack \
