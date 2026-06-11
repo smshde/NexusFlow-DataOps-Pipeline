@@ -353,15 +353,6 @@ GRAFANA_URL=$(kubectl get svc kube-prometheus-grafana \
   -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
   2>/dev/null || echo "pending")
 
-# ── SUCCESS NOTIFICATION ──────────────────────────────────
-if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
-  curl -s -X POST \
-    -H 'Content-type: application/json' \
-    --data "{\"text\":\"✅ NexusFlow full stack deployed\nAirflow: http://$AIRFLOW_URL\nGrafana: http://$GRAFANA_URL\nENV: $NEXUSFLOW_ENV\"}" \
-    "$SLACK_WEBHOOK_URL"
-fi
-
-
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║   NexusFlow Full Stack Running ✅                ║${NC}"
@@ -377,3 +368,12 @@ echo -e "${GREEN}╠════════════════════
 echo -e "${GREEN}║  When done: cd terraform/environments/dev        ║${NC}"
 echo -e "${GREEN}║             terraform destroy                    ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════╝${NC}"
+echo ""
+
+# ── SUCCESS NOTIFICATION ──────────────────────────────────
+if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+  curl -s -X POST \
+    -H 'Content-type: application/json' \
+    --data "{\"text\":\"✅ NexusFlow full stack deployed\nAirflow: http://$AIRFLOW_URL\nGrafana: http://$GRAFANA_URL\nENV: $NEXUSFLOW_ENV\"}" \
+    "$SLACK_WEBHOOK_URL"
+fi
