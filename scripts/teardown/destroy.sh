@@ -39,6 +39,38 @@ for NS in nexusflow kafka airflow monitoring; do
   kubectl delete namespace $NS --ignore-not-found=true
 done
 
+# ── DELETE ECR IMAGES - Persistant: incurs hidden cost ────────────
+echo "Deleting ECR images..."
+for REPO in datagen ingestion serving dbt processing dashboard; do
+  IMAGES=$(aws ecr list-images \
+    --repository-name nexusflow-$REPO \
+    --region ca-central-1 \
+    --query 'imageIds[*]' \
+    --output json 2>/dev/null)
+  if [ "$IMAGES" != "[]" ] && [ -n "$IMAGES" ]; then
+    aws ecr batch-delete-image \
+      --repository-name nexusflow-$REPO \
+      --image-ids "$IMAGES" \
+      --region ca-central-1 2>/dev/null || true
+    echo "  ✅ Cleared: nexusflow-$REPO"
+  fi
+done
+
+# ── DELETE CLOUDWATCH LOG GROUPS - Persistant: incurs hidden cost ─────
+echo "Deleting CloudWatch log groups..."
+for LG in \
+  "/aws/redshift/nexusflow-dev-ns/connectionlog" \
+  "/aws/redshift/nexusflow-dev-ns/useractivitylog" \
+  "/aws/redshift/nexusflow-dev-ns/userlog" \
+  "/aws/eks/nexusflow-dev-cluster/cluster" \
+  "/aws/msk/nexusflow-dev-kafka" \
+  "/aws/emr-serverless/nexusflow-dev-spark/spark"; do
+  aws logs delete-log-group \
+    --log-group-name "$LG" \
+    --region ca-central-1 2>/dev/null \
+    && echo "  ✅ Deleted: $LG" || true
+done
+
 echo -e "${GREEN}✅ Pre-destroy cleanup complete${NC}"
 echo ""
 echo "Now run:"
