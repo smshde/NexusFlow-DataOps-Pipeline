@@ -89,6 +89,10 @@ for NS in nexusflow kafka airflow; do
 done
 pass "Namespaces ready"
 
+kubectl delete namespace airflow 2>/dev/null || true
+sleep 20
+kubectl create namespace airflow
+
 # ── STEP 7.5: DEPLOY STANDALONE POSTGRES FOR AIRFLOW ────
 info "Step 7.5: Deploying standalone PostgreSQL for Airflow..."
 kubectl apply -f kubernetes/airflow/postgres.yml
@@ -269,6 +273,26 @@ aws iam put-role-policy \
     ]
   }" 2>/dev/null || true
 pass "Kafka consumer IAM policy added"
+
+# ── STEP 8.10: REDSHIFT IAM POLICY FOR DBT ──────────────
+info "Step 8.10: Adding Redshift IAM policy for dbt..."
+aws iam put-role-policy \
+  --role-name nexusflow-dev-dbt-irsa \
+  --policy-name nexusflow-redshift-policy \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Action": [
+        "redshift:GetClusterCredentials",
+        "redshift:DescribeClusters",
+        "redshift-serverless:GetCredentials",
+        "redshift-serverless:GetWorkgroup"
+      ],
+      "Resource": "*"
+    }]
+  }' 2>/dev/null || true
+pass "Redshift IAM policy added"
 
 # ── STEP 9: DEPLOY MONITORING ───────────────────────────
 info "Step 9: Deploying Prometheus + Grafana..."
