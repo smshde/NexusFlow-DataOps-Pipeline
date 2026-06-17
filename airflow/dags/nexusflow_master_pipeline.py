@@ -93,8 +93,8 @@ with DAG(
     dag_id="nexusflow_master_pipeline",
     description="NexusFlow end-to-end ELT pipeline — Bronze → Silver → Gold → ML Features",
     schedule_interval="0 3 * * *",          # Daily 03:00 UTC
-    start_date=datetime(2024, 1, 1),
-    catchup=True,
+    start_date=datetime(2026, 6, 15),
+    catchup=False,
     max_active_runs=3,
     default_args=default_args,
     tags=["nexusflow", "production", "elt", "daily"],

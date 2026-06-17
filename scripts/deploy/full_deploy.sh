@@ -35,6 +35,12 @@ pass "ECR login successful"
 
 # ── STEP 4: BUILD AND PUSH ALL IMAGES ───────────────────
 info "Step 4: Building and pushing Docker images..."
+for REPO in datagen ingestion serving dbt airflow; do
+  aws ecr create-repository \
+    --repository-name nexusflow-$REPO \
+    --region $REGION 2>/dev/null || true
+done
+
 for SERVICE in datagen ingestion serving; do
   info "  Building nexusflow-$SERVICE..."
   docker buildx build \
@@ -53,6 +59,14 @@ docker buildx build \
   . \
   --push
 pass "  nexusflow-dbt pushed"
+
+info "  Building nexusflow-airflow..."
+docker buildx build \
+  --platform linux/amd64 \
+  -t $ECR_REGISTRY/nexusflow-airflow:2.10.5 \
+  src/airflow/ \
+  --push
+pass "  nexusflow-airflow pushed"
 pass "All images in ECR"
 
 # ── STEP 5: UPLOAD SPARK SCRIPTS ────────────────────────
@@ -305,6 +319,20 @@ helm upgrade --install kube-prometheus \
   --values kubernetes/monitoring/prometheus-values.yml \
   --wait --timeout 10m
 pass "Monitoring deployed"
+
+# ── STEP 9.5: CREATE AIRFLOW DYNAMIC CONFIG ─────────────
+info "Step 9.5: Creating Airflow dynamic ConfigMap..."
+kubectl delete configmap airflow-dynamic-config -n airflow 2>/dev/null || true
+kubectl create configmap airflow-dynamic-config \
+  --namespace airflow \
+  --from-literal=AIRFLOW_VAR_NEXUSFLOW_EMR_APP_ID="$EMR" \
+  --from-literal=AIRFLOW_VAR_NEXUSFLOW_EMR_ROLE_ARN="$EMR_ROLE" \
+  --from-literal=AIRFLOW_VAR_NEXUSFLOW_ARTIFACTS_BUCKET="$S3_ARTIFACTS_BUCKET" \
+  --from-literal=AIRFLOW_VAR_NEXUSFLOW_BRONZE_BUCKET="$S3_BRONZE_BUCKET" \
+  --from-literal=AIRFLOW_VAR_NEXUSFLOW_SILVER_BUCKET="$S3_SILVER_BUCKET" \
+  --from-literal=AIRFLOW_VAR_NEXUSFLOW_GOLD_BUCKET="$S3_GOLD_BUCKET" \
+  --from-literal=AIRFLOW_VAR_NEXUSFLOW_ENV="dev"
+pass "Airflow dynamic ConfigMap created"
 
 # ── STEP 10: DEPLOY AIRFLOW ──────────────────────────────
 info "Step 10: Deploying Apache Airflow..."
