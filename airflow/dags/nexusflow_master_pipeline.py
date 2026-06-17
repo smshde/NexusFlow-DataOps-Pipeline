@@ -99,7 +99,7 @@ with DAG(
     default_args=default_args,
     tags=["nexusflow", "production", "elt", "daily"],
     doc_md=__doc__,
-    render_template_fields_with_native_obj=True,
+    render_template_as_native_obj=True,
 ) as dag:
 
     # ── START ──────────────────────────────────────────────
@@ -147,7 +147,7 @@ with DAG(
                             "--silver-bucket",  SILVER_BUCKET,
                             "--date-partition", "{{ ds }}",
                             "--entities",       entity,
-                            "--aws-region",     "us-east-1",
+                            "--aws-region",     "ca-central-1",
                         ],
                         "sparkSubmitParameters": (
                             "--conf spark.executor.cores=4 "
