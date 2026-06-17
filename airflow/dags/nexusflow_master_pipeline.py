@@ -24,7 +24,7 @@ from airflow.models import Variable
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator
 from airflow.providers.amazon.aws.operators.emr import (
-    EmrServerlessStartJobRunOperator,
+    EmrServerlessStartJobOperator,
 )
 from airflow.providers.amazon.aws.sensors.emr import EmrServerlessJobSensor
 from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
@@ -133,8 +133,8 @@ with DAG(
     @task_group(group_id="bronze_to_silver")
     def bronze_to_silver_group():
 
-        def make_spark_job(entity: str) -> EmrServerlessStartJobRunOperator:
-            return EmrServerlessStartJobRunOperator(
+        def make_spark_job(entity: str) -> EmrServerlessStartJobOperator:
+            return EmrServerlessStartJobOperator(
                 task_id=f"spark_{entity}",
                 application_id=EMR_APP_ID,
                 execution_role_arn=EMR_ROLE_ARN,
