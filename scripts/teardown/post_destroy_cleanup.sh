@@ -37,7 +37,7 @@ for LB in $(aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(L
   aws elbv2 delete-load-balancer --load-balancer-arn $LB --region $REGION && echo "deleted LB $LB"
 done
 
-echo "=== 7. Verify zero compute/networking resources ==="
+echo "=== 7. Verifying zero compute/networking resources ==="
 aws ec2 describe-instances --filters "Name=tag:Project,Values=nexusflow" "Name=instance-state-name,Values=running" --query 'Reservations[*].Instances[*].InstanceId' --output text --region $REGION
 
 echo "=== 8. Yesterday + Today actual cost ==="

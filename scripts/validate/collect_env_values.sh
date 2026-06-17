@@ -37,7 +37,7 @@ MSK=$(aws kafka get-bootstrap-brokers \
 
 EMR=$(aws emr-serverless list-applications \
   --region $REGION \
-  --query 'applications[0].applicationId' \
+  --query 'applications[0].id' \
   --output text)
 
 EMR_ROLE=$(aws iam get-role \
@@ -60,6 +60,7 @@ FERNET=$(python3 -c \
 cat > .env << ENVEOF
 AWS_ACCOUNT_ID=$ACCOUNT
 AWS_REGION=$REGION
+REGION=$REGION
 ECR_REGISTRY=$ECR
 EKS_CLUSTER_NAME=$EKS
 MSK_BOOTSTRAP_SERVERS=$MSK
@@ -85,7 +86,7 @@ ENVEOF
 
 # ── PRINT SUMMARY ─────────────────────────────────────────
 echo ""
-echo "✅ .env file created"
+echo ".env file created"
 echo ""
 echo "AWS Account:   $ACCOUNT"
 echo "ECR Registry:  $ECR"
