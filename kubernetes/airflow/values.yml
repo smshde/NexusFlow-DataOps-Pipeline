@@ -12,7 +12,7 @@
 airflowVersion: "2.10.5"
 defaultAirflowTag: "2.10.5"
 
-fernetKey: "aJfdlCJjZwddeCQgyUZwlHJqmgqfmjBKbYQUJm29HDo="
+fernetKey: "aJfdlCJjZwddeCQgyUZwlHJqmgqfmjBKbYQUJm29HDo=" # DEMO CREDENTIALS ⚠️ change for prod
 webserverSecretKey: "nexusflow-secret-key-2026"
 
 
@@ -120,6 +120,15 @@ env:
     value: "dev"
   - name: AWS_REGION
     value: "ca-central-1"
+  # Remote logging to S3 — works around webserver/scheduler pods not
+  # sharing the (RWO) logs PVC on EKS. IRSA on airflow-scheduler SA
+  # supplies creds, so the conn just needs the "aws://" default-chain URI.
+  - name: AIRFLOW__LOGGING__REMOTE_LOGGING
+    value: "true"
+  - name: AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID
+    value: "aws_default"
+  - name: AIRFLOW_CONN_AWS_DEFAULT
+    value: "aws://"
 
 # Dynamic AWS values injected from ConfigMap created by full_deploy.sh
 extraEnvFrom:

@@ -60,10 +60,10 @@ resource "aws_iam_role_policy" "emr_full_access" {
         Sid    = "GlueCatalogReadWrite"
         Effect = "Allow"
         Action = [
-          "glue:GetDatabase",    "glue:GetDatabases",
-          "glue:GetTable",       "glue:GetTables",
-          "glue:CreateTable",    "glue:UpdateTable",
-          "glue:GetPartition",   "glue:GetPartitions",
+          "glue:GetDatabase", "glue:GetDatabases",
+          "glue:GetTable", "glue:GetTables",
+          "glue:CreateTable", "glue:UpdateTable",
+          "glue:GetPartition", "glue:GetPartitions",
           "glue:BatchCreatePartition", "glue:BatchGetPartition"
         ]
         Resource = ["*"]
@@ -136,9 +136,9 @@ resource "aws_iam_role_policy" "airflow_permissions" {
         Resource = ["*"]
       },
       {
-        Sid    = "IAMPassRoleForEMR"
-        Effect = "Allow"
-        Action = ["iam:PassRole"]
+        Sid      = "IAMPassRoleForEMR"
+        Effect   = "Allow"
+        Action   = ["iam:PassRole"]
         Resource = [aws_iam_role.emr_execution.arn]
       },
       {
@@ -149,7 +149,9 @@ resource "aws_iam_role_policy" "airflow_permissions" {
           "arn:aws:s3:::${var.lakehouse_bucket}",
           "arn:aws:s3:::${var.lakehouse_bucket}/*",
           "arn:aws:s3:::${var.artifacts_bucket}",
-          "arn:aws:s3:::${var.artifacts_bucket}/*"
+          "arn:aws:s3:::${var.artifacts_bucket}/*",
+          "arn:aws:s3:::${var.logs_bucket}",
+          "arn:aws:s3:::${var.logs_bucket}/*"
         ]
       },
       {
@@ -165,8 +167,8 @@ resource "aws_iam_role_policy" "airflow_permissions" {
         Sid    = "GlueReadAccess"
         Effect = "Allow"
         Action = ["glue:GetCrawler", "glue:StartCrawler",
-                  "glue:GetCrawlerMetrics", "glue:GetDatabase",
-                  "glue:GetTable"]
+          "glue:GetCrawlerMetrics", "glue:GetDatabase",
+        "glue:GetTable"]
         Resource = ["*"]
       }
     ]
@@ -338,14 +340,14 @@ output "app_irsa_role_arn" {
 # ══════════════════════════════════════════════════════════
 # VARIABLES
 # ══════════════════════════════════════════════════════════
-variable "project_name"      { type = string }
-variable "environment"       { type = string }
-variable "account_id"        { type = string }
-variable "region"            { type = string }
-variable "lakehouse_bucket"  { type = string }
-variable "artifacts_bucket"  { type = string }
-variable "logs_bucket"       { type = string }
-variable "eks_cluster_name"  { type = string }
+variable "project_name" { type = string }
+variable "environment" { type = string }
+variable "account_id" { type = string }
+variable "region" { type = string }
+variable "lakehouse_bucket" { type = string }
+variable "artifacts_bucket" { type = string }
+variable "logs_bucket" { type = string }
+variable "eks_cluster_name" { type = string }
 
 variable "eks_oidc_provider" {
   type        = string

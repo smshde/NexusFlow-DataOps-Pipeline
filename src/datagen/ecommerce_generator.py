@@ -27,6 +27,15 @@ Faker.seed(42)  # Reproducible data
 random.seed(42) # Reproducible random choices
 
 
+def seeded_uuid4() -> uuid.UUID:
+    """uuid4-shaped UUID drawn from the seeded `random` module.
+
+    uuid.uuid4() always reads os.urandom and ignores random.seed(), which
+    breaks reproducibility despite this module's seed-everything design.
+    """
+    return uuid.UUID(int=random.getrandbits(128), version=4)
+
+
 # ── REFERENCE DATA ─────────────────────────────────────────
 
 PRODUCT_CATALOG = [
@@ -105,7 +114,7 @@ class Customer:
         ltv = round(total_orders * random.uniform(30, 250), 2)
 
         return cls(
-            customer_id=str(uuid.uuid4()),
+            customer_id=str(seeded_uuid4()),
             email=email,
             email_hash=hashlib.sha256(email.lower().encode()).hexdigest(),
             first_name=fake.first_name(),
@@ -196,7 +205,7 @@ class Order:
             qty = random.randint(1, 5)
             discount = round(p["price"] * random.choice([0, 0, 0, 0.05, 0.10, 0.15, 0.20]), 2)
             items.append(OrderItem(
-                order_item_id=str(uuid.uuid4()),
+                order_item_id=str(seeded_uuid4()),
                 product_sku=p["sku"],
                 product_name=p["name"],
                 category=p["category"],
@@ -226,7 +235,7 @@ class Order:
         )
 
         return cls(
-            order_id=str(uuid.uuid4()),
+            order_id=str(seeded_uuid4()),
             customer_id=customer_id,
             order_status=status,
             order_date=order_date.isoformat(),
@@ -245,7 +254,7 @@ class Order:
             shipping_address_country="US",
             estimated_delivery_date=delivery_date.date().isoformat(),
             actual_delivery_date=actual_delivery.date().isoformat() if actual_delivery else None,
-            session_id=str(uuid.uuid4()),
+            session_id=str(seeded_uuid4()),
             utm_source=random.choice(UTM_SOURCES),
             utm_medium=random.choice(UTM_MEDIUMS),
             utm_campaign=f"camp_{fake.word()}_{random.randint(2023, 2026)}",
@@ -300,7 +309,7 @@ class ClickstreamEvent:
 
         ip = fake.ipv4()
         return cls(
-            event_id=str(uuid.uuid4()),
+            event_id=str(seeded_uuid4()),
             session_id=session_id,
             customer_id=customer_id,
             event_type=event_type,
@@ -358,7 +367,7 @@ class EcommerceDataGenerator:
         """Yield clickstream event dicts."""
         for _ in range(num_events):             # sessions will have multiple events, so we generate session-level data and then events within that session
             customer = random.choice(self.customers) if random.random() > 0.3 else None
-            session_id = str(uuid.uuid4())
+            session_id = str(seeded_uuid4())
             events_in_session = random.randint(1, 20)
             event_ts = fake.date_time_between(start_date="-30d", end_date="now")
 
@@ -407,7 +416,7 @@ class EcommerceDataGenerator:
             product = random.choice(PRODUCT_CATALOG)
 
             review = ET.SubElement(root, "review")
-            ET.SubElement(review, "review_id").text = str(uuid.uuid4())
+            ET.SubElement(review, "review_id").text = str(seeded_uuid4())
             ET.SubElement(review, "customer_id").text = customer.customer_id
             ET.SubElement(review, "customer_email_hash").text = customer.email_hash
             ET.SubElement(review, "product_sku").text = product["sku"]

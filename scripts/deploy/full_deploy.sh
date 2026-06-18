@@ -325,13 +325,14 @@ info "Step 9.5: Creating Airflow dynamic ConfigMap..."
 kubectl delete configmap airflow-dynamic-config -n airflow 2>/dev/null || true
 kubectl create configmap airflow-dynamic-config \
   --namespace airflow \
-  --from-literal=AIRFLOW_VAR_NEXUSFLOW_EMR_APP_ID="$EMR" \
-  --from-literal=AIRFLOW_VAR_NEXUSFLOW_EMR_ROLE_ARN="$EMR_ROLE" \
+  --from-literal=AIRFLOW_VAR_NEXUSFLOW_EMR_APP_ID="$EMR_APPLICATION_ID" \
+  --from-literal=AIRFLOW_VAR_NEXUSFLOW_EMR_ROLE_ARN="$EMR_EXECUTION_ROLE_ARN" \
   --from-literal=AIRFLOW_VAR_NEXUSFLOW_ARTIFACTS_BUCKET="$S3_ARTIFACTS_BUCKET" \
   --from-literal=AIRFLOW_VAR_NEXUSFLOW_BRONZE_BUCKET="$S3_BRONZE_BUCKET" \
   --from-literal=AIRFLOW_VAR_NEXUSFLOW_SILVER_BUCKET="$S3_SILVER_BUCKET" \
   --from-literal=AIRFLOW_VAR_NEXUSFLOW_GOLD_BUCKET="$S3_GOLD_BUCKET" \
-  --from-literal=AIRFLOW_VAR_NEXUSFLOW_ENV="dev"
+  --from-literal=AIRFLOW_VAR_NEXUSFLOW_ENV="dev" \
+  --from-literal=AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER="s3://$S3_LOGS_BUCKET/airflow-logs"
 pass "Airflow dynamic ConfigMap created"
 
 # ── STEP 10: DEPLOY AIRFLOW ──────────────────────────────

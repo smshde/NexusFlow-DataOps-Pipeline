@@ -1,9 +1,10 @@
 # NexusFlow Serving Service Requirements
 # src/serving/requirements.txt
-fastapi==0.111.0
-uvicorn[standard]==0.29.0
+fastapi==0.137.1
+uvicorn[standard]==0.34.0
 asyncpg==0.29.0
 boto3==1.34.69
 prometheus-client==0.20.0
-pydantic==2.7.0
+pydantic==2.10.4
 httpx==0.27.0
+starlette==1.3.1

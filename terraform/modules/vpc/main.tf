@@ -173,9 +173,9 @@ output "vpc_cidr" {
 # VARIABLES — values come from environments/dev/main.tf
 # Do not change defaults here — change in terraform.tfvars
 # ══════════════════════════════════════════════════════════
-variable "name"    { type = string }
-variable "cidr"    { type = string }
-variable "azs"     { type = list(string) }
+variable "name" { type = string }
+variable "cidr" { type = string }
+variable "azs" { type = list(string) }
 
 variable "public_subnets" {
   type        = list(string)

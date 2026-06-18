@@ -46,16 +46,16 @@ resource "aws_cloudwatch_log_group" "eks" {
 
 # ── EKS CLUSTER ───────────────────────────────────────────
 resource "aws_eks_cluster" "main" {
-  name     = var.cluster_name   # nexusflow-dev-cluster
+  name     = var.cluster_name    # nexusflow-dev-cluster
   version  = var.cluster_version # 1.29
   role_arn = aws_iam_role.eks_cluster.arn
 
   vpc_config {
     subnet_ids              = var.subnet_ids
-    endpoint_private_access = true  # kubectl works from within VPC
-    endpoint_public_access  = true  # kubectl works from your local machine
-                                    # ⚠️ CHANGE to false for prod (use VPN/bastion)
-    security_group_ids      = [aws_security_group.eks_cluster.id]
+    endpoint_private_access = true # kubectl works from within VPC
+    endpoint_public_access  = true # kubectl works from your local machine
+    # ⚠️ CHANGE to false for prod (use VPN/bastion)
+    security_group_ids = [aws_security_group.eks_cluster.id]
   }
 
   # Log all control plane activity to CloudWatch
@@ -91,19 +91,19 @@ resource "aws_launch_template" "node" {
   block_device_mappings {
     device_name = "/dev/xvda"
     ebs {
-      volume_size           = 100   # GB per node
-                                    # ⚠️ CHANGE to 200 for Spark nodes in prod
+      volume_size = 100 # GB per node
+      # ⚠️ CHANGE to 200 for Spark nodes in prod
       volume_type           = "gp3" # faster and cheaper than gp2
       delete_on_termination = true
-      encrypted             = true  # always encrypt node storage
+      encrypted             = true # always encrypt node storage
     }
   }
 
   # IMDSv2 — prevents SSRF attacks on instance metadata
   metadata_options {
     http_endpoint               = "enabled"
-    http_tokens                 = "required"  # forces IMDSv2
-    http_put_response_hop_limit = 2           # needed for containers
+    http_tokens                 = "required" # forces IMDSv2
+    http_put_response_hop_limit = 2          # needed for containers
   }
 
   monitoring {
@@ -119,7 +119,7 @@ resource "aws_eks_node_group" "this" {
   for_each = var.node_groups
 
   cluster_name    = aws_eks_cluster.main.name
-  node_group_name = each.key               # "general" or "spark"
+  node_group_name = each.key # "general" or "spark"
   node_role_arn   = aws_iam_role.eks_node.arn
   subnet_ids      = var.subnet_ids
   instance_types  = each.value.instance_types
@@ -165,28 +165,28 @@ resource "aws_eks_node_group" "this" {
 
 resource "aws_eks_addon" "vpc_cni" {
   cluster_name                = aws_eks_cluster.main.name
-  addon_name                  = "vpc-cni"        # pod networking
+  addon_name                  = "vpc-cni" # pod networking
   resolve_conflicts_on_update = "OVERWRITE"
   # ⚠️ Check latest: aws eks describe-addon-versions --addon-name vpc-cni
 }
 
 resource "aws_eks_addon" "coredns" {
   cluster_name                = aws_eks_cluster.main.name
-  addon_name                  = "coredns"        # DNS resolution inside cluster
+  addon_name                  = "coredns" # DNS resolution inside cluster
   resolve_conflicts_on_update = "OVERWRITE"
   depends_on                  = [aws_eks_node_group.this]
 }
 
 resource "aws_eks_addon" "kube_proxy" {
   cluster_name                = aws_eks_cluster.main.name
-  addon_name                  = "kube-proxy"     # network rules on nodes
+  addon_name                  = "kube-proxy" # network rules on nodes
   resolve_conflicts_on_update = "OVERWRITE"
 }
 
 resource "aws_eks_addon" "ebs_csi_driver" {
-  cluster_name             = aws_eks_cluster.main.name
-  addon_name               = "aws-ebs-csi-driver" # persistent volumes for pods
-  service_account_role_arn = aws_iam_role.ebs_csi.arn
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "aws-ebs-csi-driver" # persistent volumes for pods
+  service_account_role_arn    = aws_iam_role.ebs_csi.arn
   resolve_conflicts_on_update = "OVERWRITE"
 }
 
@@ -341,10 +341,10 @@ output "cluster_security_group_id" {
 # ══════════════════════════════════════════════════════════
 # VARIABLES
 # ══════════════════════════════════════════════════════════
-variable "cluster_name"    { type = string }
+variable "cluster_name" { type = string }
 variable "cluster_version" { type = string }
-variable "vpc_id"          { type = string }
-variable "subnet_ids"      { type = list(string) }
+variable "vpc_id" { type = string }
+variable "subnet_ids" { type = list(string) }
 
 variable "node_groups" {
   description = "Map of node group configurations"

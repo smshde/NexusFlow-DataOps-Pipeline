@@ -95,16 +95,16 @@ resource "aws_security_group" "msk" {
 
 # ── MSK CLUSTER ───────────────────────────────────────────
 resource "aws_msk_cluster" "main" {
-  cluster_name           = var.cluster_name   # nexusflow-dev-kafka
-  kafka_version          = var.kafka_version  # 3.6.0
-  number_of_broker_nodes = var.broker_count   # 2 for dev, 3 for prod
+  cluster_name           = var.cluster_name  # nexusflow-dev-kafka
+  kafka_version          = var.kafka_version # 3.6.0
+  number_of_broker_nodes = var.broker_count  # 2 for dev, 3 for prod
 
   broker_node_group_info {
-    instance_type  = var.instance_type # kafka.t3.small for dev
-    client_subnets = slice(var.subnet_ids, 0, var.broker_count)    # slice takes only as many subnets as brokers
+    instance_type  = var.instance_type                          # kafka.t3.small for dev
+    client_subnets = slice(var.subnet_ids, 0, var.broker_count) # slice takes only as many subnets as brokers
     storage_info {
       ebs_storage_info {
-        volume_size = var.storage_gb   # 100 GB per broker for dev
+        volume_size = var.storage_gb # 100 GB per broker for dev
       }
     }
     security_groups = [aws_security_group.msk.id]
@@ -112,8 +112,8 @@ resource "aws_msk_cluster" "main" {
 
   encryption_info {
     encryption_in_transit {
-      client_broker = "TLS"       # force TLS between client and broker
-      in_cluster    = true        # encrypt inter-broker traffic
+      client_broker = "TLS" # force TLS between client and broker
+      in_cluster    = true  # encrypt inter-broker traffic
     }
     encryption_at_rest_kms_key_arn = aws_kms_key.msk.arn
   }
@@ -140,7 +140,7 @@ resource "aws_msk_cluster" "main" {
       }
       s3 {
         enabled = true
-        bucket  = var.logs_bucket         # auto from S3 module
+        bucket  = var.logs_bucket # auto from S3 module
         prefix  = "kafka-broker-logs/"
       }
     }

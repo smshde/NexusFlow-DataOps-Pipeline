@@ -9,20 +9,20 @@
 resource "aws_ecr_repository" "repos" {
   for_each = toset(var.repositories) # creates one repo per service name
 
-  name                 = each.value  # e.g. "nexusflow-datagen"
-  image_tag_mutability = "MUTABLE"   # allows overwriting :latest tag
-                                     # ⚠️ CHANGE to "IMMUTABLE" for prod
-                                     # (forces unique tags per image)
-  
-  force_delete         = true   # allows terraform destroy to delete repo, even if images exist inside it
-                                       
+  name                 = each.value # e.g. "nexusflow-datagen"
+  image_tag_mutability = "MUTABLE"  # allows overwriting :latest tag
+  # ⚠️ CHANGE to "IMMUTABLE" for prod
+  # (forces unique tags per image)
+
+  force_delete = true # allows terraform destroy to delete repo, even if images exist inside it
+
   image_scanning_configuration {
     scan_on_push = true # automatically scan for CVEs on push
   }
 
   encryption_configuration {
     encryption_type = "AES256" # encrypt images at rest
-                               # ⚠️ CHANGE to "KMS" for prod compliance
+    # ⚠️ CHANGE to "KMS" for prod compliance
   }
 
   tags = var.tags

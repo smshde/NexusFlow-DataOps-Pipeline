@@ -40,8 +40,8 @@ data "aws_subnet" "selected" {
 resource "aws_emrserverless_application" "spark" {
   name          = "${var.project_name}-spark"
   release_label = "emr-7.13.0" # ⚠️ can be changed to latest version
-                                # Check: aws emr-serverless list-applications
-  type          = "SPARK"
+  # Check: aws emr-serverless list-applications
+  type = "SPARK"
 
   # ── PRE-INITIALIZED CAPACITY ────────────────────────────
   # Keeps a small pool of workers warm to reduce cold-start time.

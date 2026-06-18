@@ -8,10 +8,10 @@
 # ============================================================
 
 # ── CORE ──────────────────────────────────────────────────
-aws_region   = "ca-central-1"     
-environment  = "dev"              
-project_name = "nexusflow"        
-team_name    = "smit-data-engineering-portfolio" 
+aws_region   = "ca-central-1"
+environment  = "dev"
+project_name = "nexusflow"
+team_name    = "smit-data-engineering-portfolio"
 
 # ── NETWORK ───────────────────────────────────────────────
 # check if 10.0.0.0/16 conflicts with an existing VPC in AWS account.

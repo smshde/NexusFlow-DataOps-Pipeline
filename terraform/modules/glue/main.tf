@@ -11,9 +11,9 @@
 # These appear in AWS Glue → Data Catalog → Databases.
 # Also queryable via Amazon Athena and Redshift Spectrum.
 resource "aws_glue_catalog_database" "layers" {
-  for_each    = toset(var.database_names) # ["bronze", "silver", "gold"]
+  for_each = toset(var.database_names) # ["bronze", "silver", "gold"]
 
-  name        = "${var.project_name}_${var.environment}_${each.value}"
+  name = "${var.project_name}_${var.environment}_${each.value}"
   # e.g. nexusflow_dev_bronze
   # ⚠️ Glue database names cannot contain hyphens — underscores only
 
@@ -54,7 +54,7 @@ resource "aws_iam_role_policy" "glue_s3_access" {
         Effect = "Allow"
         Action = [
           "s3:GetObject",
-          "s3:PutObject",   # needed to write crawler metadata
+          "s3:PutObject", # needed to write crawler metadata
           "s3:ListBucket"
         ]
         Resource = [
@@ -63,9 +63,9 @@ resource "aws_iam_role_policy" "glue_s3_access" {
         ]
       },
       {
-        Effect   = "Allow"
-        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream",
-                    "logs:PutLogEvents"]
+        Effect = "Allow"
+        Action = ["logs:CreateLogGroup", "logs:CreateLogStream",
+        "logs:PutLogEvents"]
         Resource = ["arn:aws:logs:*:*:*:/aws-glue/*"]
       }
     ]
@@ -99,8 +99,8 @@ resource "aws_glue_crawler" "layers" {
   # What happens when schema changes
   schema_change_policy {
     update_behavior = "LOG" # update schema on changes
-    delete_behavior = "LOG"               # log but don't delete on removals
-                                          # ⚠️ CHANGE to "DEPRECATE_IN_DATABASE" for prod safety
+    delete_behavior = "LOG" # log but don't delete on removals
+    # ⚠️ CHANGE to "DEPRECATE_IN_DATABASE" for prod safety
   }
 
   tags = var.tags

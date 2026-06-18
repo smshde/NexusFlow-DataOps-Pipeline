@@ -28,7 +28,7 @@ terraform {
 
   # ── TERRAFORM CLOUD BACKEND ─────────────────────────────
   # State is stored in Terraform Cloud — no S3 bucket needed.
-  
+
   cloud {
     organization = "NexusFlow_DataOps_Pipeline" # TERRAFORM ORG NAME
 
@@ -45,9 +45,9 @@ provider "aws" {
   default_tags {
     tags = {
       Project     = "nexusflow"
-      Environment = var.environment   # dev
+      Environment = var.environment # dev
       ManagedBy   = "terraform"
-      Owner       = var.team_name     # smit-data-engineering-portfolio
+      Owner       = var.team_name # smit-data-engineering-portfolio
     }
   }
 }
@@ -109,14 +109,14 @@ module "vpc" {
   source = "../../modules/vpc"
 
   name            = local.name
-  cidr            = var.vpc_cidr           # 10.0.0.0/16 — change if conflicts with existing VPC
-  azs             = local.azs              # auto-selected from your region
-  private_subnets = var.private_subnets    # ["10.0.1.0/24","10.0.2.0/24","10.0.3.0/24"]
-  public_subnets  = var.public_subnets     # ["10.0.101.0/24","10.0.102.0/24","10.0.103.0/24"]
+  cidr            = var.vpc_cidr        # 10.0.0.0/16 — change if conflicts with existing VPC
+  azs             = local.azs           # auto-selected from your region
+  private_subnets = var.private_subnets # ["10.0.1.0/24","10.0.2.0/24","10.0.3.0/24"]
+  public_subnets  = var.public_subnets  # ["10.0.101.0/24","10.0.102.0/24","10.0.103.0/24"]
 
   enable_nat_gateway = true
-  single_nat_gateway = true  # 1 NAT gateway for dev could save ~$32/mo vs 3 gateways ($,single/multi AZ)
-                             # CHANGE single_nat_gateway = false for prod (high availability)
+  single_nat_gateway = true # 1 NAT gateway for dev could save ~$32/mo vs 3 gateways ($,single/multi AZ)
+  # CHANGE single_nat_gateway = false for prod (high availability)
 
   enable_dns_hostnames = true
   enable_dns_support   = true
@@ -132,26 +132,26 @@ module "vpc" {
 module "eks" {
   source = "../../modules/eks"
 
-  cluster_name    = "${local.name}-cluster"      # nexusflow-dev-cluster
-  cluster_version = var.eks_cluster_version      # "1.29" — update if newer version available
-  vpc_id          = module.vpc.vpc_id            # auto from VPC module
-  subnet_ids      = module.vpc.private_subnets   # EKS nodes in private subnets only
+  cluster_name    = "${local.name}-cluster"    # nexusflow-dev-cluster
+  cluster_version = var.eks_cluster_version    # "1.29" — update if newer version available
+  vpc_id          = module.vpc.vpc_id          # auto from VPC module
+  subnet_ids      = module.vpc.private_subnets # EKS nodes in private subnets only
 
   node_groups = {
     # ── GENERAL WORKLOADS (Airflow, API, datagen) ────────
     general = {
       instance_types = var.eks_node_instance_types # ["m5.xlarge","m5.2xlarge"]
-                                                   # ⚠️ scale down to ["t3.medium"] to cut the cost
-                                                   # during initial testing only
-      min_size     = 2  # Keeping min 2 to maintain availability
-      max_size     = 6  # ⚠️ increase for prod. 
-      desired_size = 2  # ⚠️ increase for prod.
+      # ⚠️ scale down to ["t3.medium"] to cut the cost
+      # during initial testing only
+      min_size     = 2 # Keeping min 2 to maintain availability
+      max_size     = 6 # ⚠️ increase for prod. 
+      desired_size = 2 # ⚠️ increase for prod.
     }
 
     # ── SPARK WORKLOADS (EMR on EKS, isolated) ───────────
     spark = {
       instance_types = ["r6i.xlarge", "r6i.2xlarge"] # memory-optimized for Spark , SPOT instance
-                                                     # ⚠️ choose ["r5.xlarge"] if r6i unavailable
+      # ⚠️ choose ["r5.xlarge"] if r6i unavailable
       min_size     = 0  # if no Spark jobs running — saves cost
       max_size     = 10 # ⚠️ change based on number of prallel Spark job processing
       desired_size = 0  # starts at 0 — auto-scales when job submitted
@@ -198,31 +198,31 @@ module "ecr" {
 module "s3" {
   source = "../../modules/s3"
 
-  project_name = var.project_name  # nexusflow
-  environment  = var.environment   # dev
+  project_name = var.project_name # nexusflow
+  environment  = var.environment  # dev
 
   # ⚠️ S3 bucket names must be GLOBALLY unique across all AWS accounts.
   # monitor "BucketAlreadyExists" error, add unique suffix 'name'to resolve.
   buckets = {
     lakehouse = {
-      name              = "nexusflow-dev-lakehouse"     
+      name              = "nexusflow-dev-lakehouse"
       versioning        = true
       lifecycle_enabled = true
-      transition_days   = 90  # move to STANDARD_IA after 90 days
+      transition_days   = 90 # move to STANDARD_IA after 90 days
     }
     artifacts = {
-      name              = "nexusflow-dev-artifacts"     
+      name              = "nexusflow-dev-artifacts"
       versioning        = true
       lifecycle_enabled = false
     }
     logs = {
-      name              = "nexusflow-dev-logs"           
+      name              = "nexusflow-dev-logs"
       versioning        = false
       lifecycle_enabled = true
-      transition_days   = 30  # logs move to cheaper storage faster
+      transition_days   = 30 # logs move to cheaper storage faster
     }
     athena_results = {
-      name              = "nexusflow-dev-athena-results" 
+      name              = "nexusflow-dev-athena-results"
       versioning        = false
       lifecycle_enabled = false
     }
@@ -239,27 +239,27 @@ module "s3" {
 module "msk" {
   source = "../../modules/msk"
 
-  cluster_name  = "${local.name}-kafka"           # nexusflow-dev-kafka
-  kafka_version = "3.6.0"                         # update for newer stable version.
-  instance_type = "kafka.t3.small"                # budget friendly option for dev
-                                                  # ⚠️ scale up to "kafka.m5.large" for prod
-  broker_count  = 2                               # minimum for dev
-                                                  # ⚠️ scale to 3 (common min) or 5 or higher for prod 
-  vpc_id        = module.vpc.vpc_id
-  subnet_ids    = module.vpc.private_subnets
-  storage_gb    = 100                             # 100GB per broker for dev
-                                                  # ⚠️ increase to 1000 or more for prod
-  logs_bucket   = module.s3.bucket_names["logs"]  # auto from S3 module
+  cluster_name  = "${local.name}-kafka" # nexusflow-dev-kafka
+  kafka_version = "3.6.0"               # update for newer stable version.
+  instance_type = "kafka.t3.small"      # budget friendly option for dev
+  # ⚠️ scale up to "kafka.m5.large" for prod
+  broker_count = 2 # minimum for dev
+  # ⚠️ scale to 3 (common min) or 5 or higher for prod 
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
+  storage_gb = 100 # 100GB per broker for dev
+  # ⚠️ increase to 1000 or more for prod
+  logs_bucket = module.s3.bucket_names["logs"] # auto from S3 module
 
   # Kafka topics — partitions drive parallelism
   # Rule: partitions >= number of consumers you expect
   topics = [
-    { name = "orders",           partitions = 6,  replication = 2 },
-    { name = "clickstream",      partitions = 12, replication = 2 }, # highest volume
-    { name = "inventory-events", partitions = 4,  replication = 2 },
-    { name = "product-reviews",  partitions = 4,  replication = 2 },
-    { name = "user-sessions",    partitions = 8,  replication = 2 },
-    { name = "dlq-orders",       partitions = 2,  replication = 2 }, # dead letter queue
+    { name = "orders", partitions = 6, replication = 2 },
+    { name = "clickstream", partitions = 12, replication = 2 }, # highest volume
+    { name = "inventory-events", partitions = 4, replication = 2 },
+    { name = "product-reviews", partitions = 4, replication = 2 },
+    { name = "user-sessions", partitions = 8, replication = 2 },
+    { name = "dlq-orders", partitions = 2, replication = 2 }, # dead letter queue
   ]
 
   tags = local.tags
@@ -294,9 +294,9 @@ module "emr" {
 
   project_name     = local.name
   environment      = var.environment
-  subnet_id        = module.vpc.private_subnets[0]         # single subnet for dev
-  logs_bucket      = module.s3.bucket_names["logs"]        # auto from S3 module
-  artifacts_bucket = module.s3.bucket_names["artifacts"]   # auto from S3 module
+  subnet_id        = module.vpc.private_subnets[0]       # single subnet for dev
+  logs_bucket      = module.s3.bucket_names["logs"]      # auto from S3 module
+  artifacts_bucket = module.s3.bucket_names["artifacts"] # auto from S3 module
 
   tags = local.tags
 }
@@ -309,11 +309,11 @@ module "emr" {
 module "redshift" {
   source = "../../modules/redshift"
 
-  namespace_name = "${local.name}-ns"  # nexusflow-dev-ns
-  workgroup_name = "${local.name}-wg"  # nexusflow-dev-wg
-  database_name  = "nexusflow"         
-  base_capacity  = 8                   # 8 RPU minimum — perfect for dev
-                                       # ⚠️ scale up to 32 for prod 
+  namespace_name = "${local.name}-ns" # nexusflow-dev-ns
+  workgroup_name = "${local.name}-wg" # nexusflow-dev-wg
+  database_name  = "nexusflow"
+  base_capacity  = 8 # 8 RPU minimum — perfect for dev
+  # ⚠️ scale up to 32 for prod 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 

@@ -113,13 +113,13 @@ resource "aws_redshiftserverless_namespace" "main" {
   db_name               = var.database_name
   admin_username        = "nexusflow_admin"
   manage_admin_password = true
-  
+
   # AWS auto-generates password and stores it in Secrets Manager , No random_password resource needed anymore
   # connection details can be retrieved from : AWS Console → Secrets Manager → redshift!nexusflow-dev-ns-nexusflow_admin
-  
-  default_iam_role_arn  = aws_iam_role.redshift.arn
-  iam_roles             = [aws_iam_role.redshift.arn]
-  kms_key_id            = aws_kms_key.redshift.arn
+
+  default_iam_role_arn = aws_iam_role.redshift.arn
+  iam_roles            = [aws_iam_role.redshift.arn]
+  kms_key_id           = aws_kms_key.redshift.arn
 
   log_exports = ["userlog", "connectionlog", "useractivitylog"]
 
@@ -131,10 +131,10 @@ resource "aws_redshiftserverless_namespace" "main" {
 # 8 RPU minimum. Cost charged per RPU-second of actual query time.
 resource "aws_redshiftserverless_workgroup" "main" {
   namespace_name = aws_redshiftserverless_namespace.main.namespace_name
-  workgroup_name = var.workgroup_name  # nexusflow-dev-wg
+  workgroup_name = var.workgroup_name # nexusflow-dev-wg
   base_capacity  = var.base_capacity  # 8 RPU for dev
-                                      # ⚠️ CHANGE to 32 for prod
-                                      # ⚠️ CHANGE to 128 for heavy analytics
+  # ⚠️ CHANGE to 32 for prod
+  # ⚠️ CHANGE to 128 for heavy analytics
   # Query configuration
   config_parameter {
     parameter_key   = "enable_user_activity_logging"
@@ -144,7 +144,7 @@ resource "aws_redshiftserverless_workgroup" "main" {
   config_parameter {
     parameter_key   = "max_query_execution_time"
     parameter_value = "3600" # 1 hours max query time - dev cost control
-                               # ⚠️ CHANGE to 14400 (4hr) or more if needed 
+    # ⚠️ CHANGE to 14400 (4hr) or more if needed 
   }
 
   config_parameter {
@@ -152,10 +152,10 @@ resource "aws_redshiftserverless_workgroup" "main" {
     parameter_value = "ISO, MDY"
   }
 
-  security_group_ids = [aws_security_group.redshift.id]
-  subnet_ids             = var.subnet_ids
-  publicly_accessible    = false # never expose Redshift to internet
-                                 # access via VPC only
+  security_group_ids  = [aws_security_group.redshift.id]
+  subnet_ids          = var.subnet_ids
+  publicly_accessible = false # never expose Redshift to internet
+  # access via VPC only
 
   tags = var.tags
 }

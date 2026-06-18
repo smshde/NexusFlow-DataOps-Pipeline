@@ -12,11 +12,11 @@ resource "aws_s3_bucket" "buckets" {
   for_each = var.buckets
 
   bucket = each.value.name # e.g. "nexusflow-dev-lakehouse"
-                            # ⚠️ Must be globally unique — if creation fails
-                            # with BucketAlreadyExists, add a random suffix
-                            # to the name in terraform.tfvars
-  force_destroy = true    # Allows terraform to destroy buckets even if contains objects/versioned objects
-                          # Not safe for prod
+  # ⚠️ Must be globally unique — if creation fails
+  # with BucketAlreadyExists, add a random suffix
+  # to the name in terraform.tfvars
+  force_destroy = true # Allows terraform to destroy buckets even if contains objects/versioned objects
+  # Not safe for prod
   tags = merge(var.tags, {
     Name  = each.value.name
     Layer = each.key # bronze, silver, gold, etc.
@@ -95,12 +95,12 @@ resource "aws_s3_bucket_lifecycle_configuration" "buckets" {
   rule {
     id     = "transition-to-cheaper-storage"
     status = "Enabled"
-    
+
     filter {}
     # empty filter = apply rule to ALL objects in bucket
     # required by AWS provider 5.x 
     # Move to Infrequent Access after N days
-    
+
     transition {
       days          = each.value.transition_days # 90 for lakehouse, 30 for logs
       storage_class = "STANDARD_IA"

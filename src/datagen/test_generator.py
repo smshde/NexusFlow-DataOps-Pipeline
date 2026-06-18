@@ -288,7 +288,7 @@ class TestAnalyticsAPI:
         """FastAPI test client with mocked DB."""
         import sys, os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../serving"))
-        from main import app
+        from fastapi_main import app
         from httpx import AsyncClient
         return AsyncClient(app=app, base_url="http://test")
 
