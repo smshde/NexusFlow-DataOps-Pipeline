@@ -127,6 +127,15 @@ with DAG(
 
         check_completeness >> [bronze_complete, bronze_incomplete]
 
+        # Group-to-group ">>" wires every leaf of this group (both
+        # bronze_complete AND bronze_incomplete) as upstream of the next
+        # group. Since BranchPythonOperator skips whichever branch it
+        # doesn't pick, and downstream tasks default to ALL_SUCCESS,
+        # that skip poisons the entire rest of the pipeline regardless
+        # of which branch fired. Return only bronze_complete so the
+        # chain below gates on it alone.
+        return bronze_complete
+
     validate_bronze = validate_bronze_group()
 
     # ── SPARK PROCESSING: BRONZE → SILVER ─────────────────

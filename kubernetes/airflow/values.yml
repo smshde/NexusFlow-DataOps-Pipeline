@@ -58,6 +58,14 @@ webserver:
     firstName: Nexus
     lastName: Flow
     password: nexusflow2026   # DEMO CREDENTIALS ⚠️ change for prod
+  # Top-level `serviceAccount:` block was not in this chart's values
+  # schema and gets silently dropped — IRSA annotations must live here,
+  # per-component, or the pod falls back to the node's EC2 instance role.
+  serviceAccount:
+    create: true
+    name: airflow-webserver
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-airflow-irsa # ⚠️
 
 # ── SCHEDULER ─────────────────────────────────────────────
 scheduler:
@@ -69,6 +77,11 @@ scheduler:
     limits:
       cpu: 1
       memory: 2Gi
+  serviceAccount:
+    create: true
+    name: airflow-scheduler
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-airflow-irsa # ⚠️
 
 # ── TRIGGERER — disabled for LocalExecutor ────────────────
 triggerer:
@@ -85,10 +98,12 @@ dags:
     wait: 60            # wait 60s before first sync
 
 # ── LOGS ──────────────────────────────────────────────────
+# Chart hardcodes the logs PVC to ReadWriteMany, which EBS can't
+# provision (RWX filesystem unsupported). Disabled — remote logging to
+# S3 (see env vars below) covers cross-pod log reads instead.
 logs:
   persistence:
-    enabled: true
-    size: 5Gi
+    enabled: false
 
 workers:
   persistence:
@@ -131,15 +146,8 @@ env:
     value: "aws://"
 
 # Dynamic AWS values injected from ConfigMap created by full_deploy.sh
-extraEnvFrom:
+extraEnvFrom: |
   - configMapRef:
       name: airflow-dynamic-config
-
- # ── SERVICE ACCOUNT ───────────────────────────────────────       
-serviceAccount:
-  create: true
-  name: airflow-scheduler
-  annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexusflow-dev-airflow-irsa # ⚠️ 
 
 

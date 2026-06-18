@@ -105,9 +105,16 @@ resource "aws_iam_role" "airflow_irsa" {
       }
       Condition = {
         StringEquals = {
-          # Only the Airflow scheduler service account can assume this role
-          "${var.eks_oidc_provider}:sub" = "system:serviceaccount:airflow:airflow-scheduler"
           "${var.eks_oidc_provider}:aud" = "sts.amazonaws.com"
+          # Scheduler (LocalExecutor runs tasks directly) and webserver
+          # (S3 remote log reads) both need this role; chart's top-level
+          # serviceAccount block is schema-ignored, so annotations must
+          # be set per-component in values.yml — see scheduler/webserver
+          # serviceAccount blocks there. A list here means "match any".
+          "${var.eks_oidc_provider}:sub" = [
+            "system:serviceaccount:airflow:airflow-scheduler",
+            "system:serviceaccount:airflow:airflow-webserver"
+          ]
         }
       }
     }]

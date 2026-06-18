@@ -336,6 +336,12 @@ kubectl create configmap airflow-dynamic-config \
 pass "Airflow dynamic ConfigMap created"
 
 # ── STEP 10: DEPLOY AIRFLOW ──────────────────────────────
+# No --wait here: this chart's DB-migration Job is a post-upgrade hook,
+# and Helm only runs post-upgrade hooks after --wait confirms the main
+# Deployments are Ready. Scheduler/webserver init containers block on
+# migrations, which can't run until the hook fires — --wait deadlocks
+# against its own hook. Wait on rollout explicitly instead, after the
+# hook has already had a chance to run.
 info "Step 10: Deploying Apache Airflow..."
 helm repo add apache-airflow \
   https://airflow.apache.org 2>/dev/null || true
@@ -344,8 +350,9 @@ helm upgrade --install airflow apache-airflow/airflow \
   --version 1.16.0 \
   --namespace airflow \
   --values kubernetes/airflow/values.yml \
-  --timeout 30m \
-  --wait
+  --timeout 10m
+kubectl rollout status deployment/airflow-scheduler -n airflow --timeout=10m
+kubectl rollout status deployment/airflow-webserver -n airflow --timeout=10m
 pass "Airflow deployed"
 
 # ── STEP 11: DEPLOY APPLICATION PODS ────────────────────

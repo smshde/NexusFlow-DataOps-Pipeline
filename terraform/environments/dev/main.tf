@@ -169,6 +169,46 @@ module "eks" {
   tags = local.tags
 }
 
+# ── DEFAULT STORAGECLASS — CSI-backed gp3 ─────────────────
+# EKS ships a "gp2" StorageClass using the legacy in-tree
+# "kubernetes.io/aws-ebs" provisioner, which the EBS CSI addon
+# does not serve — PVCs against it stay Pending forever ("no
+# persistent volumes available"). Replace the default with one
+# pointed at the CSI driver (ebs.csi.aws.com).
+resource "kubernetes_storage_class_v1" "gp3" {
+  metadata {
+    name = "gp3"
+    annotations = {
+      "storageclass.kubernetes.io/is-default-class" = "true"
+    }
+  }
+  storage_provisioner = "ebs.csi.aws.com"
+  reclaim_policy       = "Delete"
+  volume_binding_mode   = "WaitForFirstConsumer"
+  parameters = {
+    type = "gp3"
+  }
+
+  depends_on = [module.eks]
+}
+
+# EKS auto-creates a "gp2" StorageClass marked default (legacy in-tree
+# provisioner). Demote it so "gp3" above is the sole default — two
+# default StorageClasses makes PVC binding ambiguous/undefined.
+resource "kubernetes_annotations" "gp2_not_default" {
+  api_version = "storage.k8s.io/v1"
+  kind        = "StorageClass"
+  metadata {
+    name = "gp2"
+  }
+  annotations = {
+    "storageclass.kubernetes.io/is-default-class" = "false"
+  }
+  force = true
+
+  depends_on = [module.eks]
+}
+
 # ══════════════════════════════════════════════════════════
 # MODULE 3 — ECR
 # Creates: Container registries for all 6 services
