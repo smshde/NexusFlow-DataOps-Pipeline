@@ -355,6 +355,22 @@ kubectl rollout status deployment/airflow-scheduler -n airflow --timeout=10m
 kubectl rollout status deployment/airflow-webserver -n airflow --timeout=10m
 pass "Airflow deployed"
 
+# ── STEP 10.5: CREATE SLACK CONNECTION ───────────────────
+# DAG's SlackWebhookOperator tasks (notify_success, notify_failure,
+# bronze_incomplete) use conn_id "slack_webhook_nexusflow" — this was
+# never created, so those tasks throw "connection not found" whenever
+# reached. Create it here if a webhook URL was provided.
+if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+  info "Step 10.5: Creating Airflow Slack connection..."
+  kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- \
+    airflow connections add slack_webhook_nexusflow \
+    --conn-type slackwebhook \
+    --conn-host "$SLACK_WEBHOOK_URL" || true
+  pass "Slack connection created"
+else
+  info "Step 10.5: SLACK_WEBHOOK_URL not set — skipping Slack connection (notify tasks will fail if reached)"
+fi
+
 # ── STEP 11: DEPLOY APPLICATION PODS ────────────────────
 info "Step 11: Deploying application pods..."
 kubectl apply -f kubernetes/datagen/deployment.yml

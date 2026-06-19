@@ -71,6 +71,25 @@ for LG in \
     && echo "  ✅ Deleted: $LG" || true
 done
 
+# ── STOP EMR SERVERLESS APPLICATION ──────────────────────
+# terraform destroy fails with ValidationException if the app is
+# STARTED (e.g. a Spark job was running/submitted) — DeleteApplication
+# only accepts [CREATED, STOPPED]. Stop it first, idempotent.
+echo -e "${CYAN}Stopping EMR Serverless application...${NC}"
+EMR_APP_ID=$(aws emr-serverless list-applications \
+  --region "$REGION" \
+  --query "applications[?name=='nexusflow-dev-spark'].id" \
+  --output text 2>/dev/null)
+if [ -n "$EMR_APP_ID" ] && [ "$EMR_APP_ID" != "None" ]; then
+  aws emr-serverless stop-application --application-id "$EMR_APP_ID" --region "$REGION" 2>/dev/null || true
+  for i in $(seq 1 20); do
+    APP_STATE=$(aws emr-serverless get-application --application-id "$EMR_APP_ID" --region "$REGION" --query 'application.state' --output text 2>/dev/null)
+    [ "$APP_STATE" = "STOPPED" ] || [ "$APP_STATE" = "CREATED" ] && break
+    sleep 10
+  done
+  echo "  ✅ EMR app $EMR_APP_ID state: ${APP_STATE:-unknown}"
+fi
+
 echo -e "${GREEN}✅ Pre-destroy cleanup complete${NC}"
 echo ""
 echo "Now run:"
