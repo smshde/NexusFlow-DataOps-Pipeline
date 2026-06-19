@@ -406,8 +406,8 @@ GRAFANA_URL=$(kubectl get svc kube-prometheus-grafana \
 
 echo ""
 echo "NexusFlow Full Stack Running"
-echo "Airflow:  http://$AIRFLOW_URL"
-echo "Grafana:  http://$GRAFANA_URL"
+echo "Airflow:  http://$AIRFLOW_URL:8080"
+echo "Grafana:  http://$GRAFANA_URL:80"
 echo "Creds:    admin / nexusflow2026"
 echo "Logs:     kubectl logs -n nexusflow -l app=datagen -f"
 echo "Done:     cd terraform/environments/dev && terraform destroy"
@@ -416,6 +416,6 @@ echo ""
 if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
   curl -s -X POST \
     -H 'Content-type: application/json' \
-    --data "{\"text\":\"DONE: NexusFlow deployed. Airflow: http://$AIRFLOW_URL Grafana: http://$GRAFANA_URL\"}" \
+    --data "{\"text\":\"DONE: NexusFlow deployed. Airflow: http://$AIRFLOW_URL:8080 Grafana: http://$GRAFANA_URL:80\"}" \
     "$SLACK_WEBHOOK_URL"
 fi
