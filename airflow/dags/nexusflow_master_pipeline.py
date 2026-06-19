@@ -158,13 +158,19 @@ with DAG(
                             "--entities",       entity,
                             "--aws-region",     "ca-central-1",
                         ],
+                        # Sized for the EMR app's demo cap (16 vCPU / 64 GB total,
+                        # terraform/modules/emr/main.tf) shared across 4 parallel
+                        # entity jobs. Old cores=4/mem=16g/maxExecutors=20 let a
+                        # single job alone request 80 vCPU/320GB — instantly hit
+                        # ApplicationMaxCapacityExceededException even before the
+                        # other 3 jobs asked for anything.
                         "sparkSubmitParameters": (
-                            "--conf spark.executor.cores=4 "
-                            "--conf spark.executor.memory=16g "
-                            "--conf spark.driver.memory=8g "
+                            "--conf spark.executor.cores=1 "
+                            "--conf spark.executor.memory=2g "
+                            "--conf spark.driver.memory=2g "
                             "--conf spark.dynamicAllocation.enabled=true "
-                            "--conf spark.dynamicAllocation.minExecutors=2 "
-                            "--conf spark.dynamicAllocation.maxExecutors=20 "
+                            "--conf spark.dynamicAllocation.minExecutors=1 "
+                            "--conf spark.dynamicAllocation.maxExecutors=3 "
                             "--conf spark.sql.adaptive.enabled=true"
                         ),
                     }

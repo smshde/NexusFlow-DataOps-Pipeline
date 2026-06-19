@@ -137,13 +137,16 @@ env:
     value: "ca-central-1"
   # Remote logging to S3 — works around webserver/scheduler pods not
   # sharing the (RWO) logs PVC on EKS. IRSA on airflow-scheduler SA
-  # supplies creds, so the conn just needs the "aws://" default-chain URI.
+  # supplies creds, so the conn just needs the default-chain URI.
   - name: AIRFLOW__LOGGING__REMOTE_LOGGING
     value: "true"
   - name: AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID
     value: "aws_default"
+  # Airflow's AWS hook reads region from the connection's extras, not
+  # from the AWS_REGION env var — a bare "aws://" conn makes every AWS
+  # hook (EMR Serverless, Glue, S3) fail with botocore.NoRegionError.
   - name: AIRFLOW_CONN_AWS_DEFAULT
-    value: "aws://"
+    value: "aws://?region_name=ca-central-1"
 
 # Dynamic AWS values injected from ConfigMap created by full_deploy.sh
 extraEnvFrom: |
