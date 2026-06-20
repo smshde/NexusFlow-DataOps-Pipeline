@@ -27,7 +27,7 @@ from airflow.providers.amazon.aws.operators.emr import (
     EmrServerlessStartJobOperator,
 )
 from airflow.providers.amazon.aws.sensors.emr import EmrServerlessJobSensor
-from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
+from airflow.providers.amazon.aws.operators.glue_crawler import GlueCrawlerOperator
 from airflow.providers.amazon.aws.sensors.s3 import S3KeySensor
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
@@ -199,22 +199,19 @@ with DAG(
     # ── GLUE CRAWLERS: UPDATE CATALOG ─────────────────────
     @task_group(group_id="update_catalog")
     def update_catalog_group():
-
-        crawl_silver_orders = GlueJobOperator(
-            task_id="crawl_silver_orders",
-            job_name=f"nexusflow-{ENV}-silver-crawler",
-            script_args={"--entity": "orders"},
+        # terraform provisions exactly one crawler per layer (bronze/
+        # silver/gold), each pointed at the whole layer's S3 prefix —
+        # it picks up every entity under silver/ in one pass. There's
+        # no per-entity crawler to target, and AWS rejects a second
+        # concurrent StartCrawler call against the same crawler name
+        # (CrawlerRunningException), so this can't be two parallel
+        # tasks. GlueJobOperator was also the wrong operator entirely —
+        # this targets a Crawler resource, not a Job.
+        GlueCrawlerOperator(
+            task_id="crawl_silver",
+            config={"Name": f"nexusflow-{ENV}-silver-crawler"},
             aws_conn_id=AWS_CONN,
         )
-
-        crawl_silver_events = GlueJobOperator(
-            task_id="crawl_silver_events",
-            job_name=f"nexusflow-{ENV}-silver-crawler",
-            script_args={"--entity": "clickstream"},
-            aws_conn_id=AWS_CONN,
-        )
-
-        [crawl_silver_orders, crawl_silver_events]
 
     update_catalog = update_catalog_group()
 

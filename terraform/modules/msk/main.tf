@@ -25,7 +25,7 @@ resource "aws_cloudwatch_log_group" "msk" {
 # ── MSK CONFIGURATION ────────────────────────────────────
 # Custom broker settings — tuned for e-commerce event volume.
 resource "aws_msk_configuration" "main" {
-  kafka_versions = [var.kafka_version] # ["3.6.0"]
+  kafka_versions = [var.kafka_version] # ["3.9.x"]
   name           = "${var.cluster_name}-config"
 
   server_properties = <<PROPERTIES
@@ -96,7 +96,7 @@ resource "aws_security_group" "msk" {
 # ── MSK CLUSTER ───────────────────────────────────────────
 resource "aws_msk_cluster" "main" {
   cluster_name           = var.cluster_name  # nexusflow-dev-kafka
-  kafka_version          = var.kafka_version # 3.6.0
+  kafka_version          = var.kafka_version # 3.9.x
   number_of_broker_nodes = var.broker_count  # 2 for dev, 3 for prod
 
   broker_node_group_info {
@@ -204,7 +204,7 @@ variable "cluster_name" {
 variable "kafka_version" {
   type        = string
   description = "Kafka version"
-  default     = "3.6.0"
+  default     = "3.9.x" # AWS MSK uses literal "3.9.x" as the version string, not "3.9.0" — 3.6.0 is being phased out
 }
 
 variable "instance_type" {

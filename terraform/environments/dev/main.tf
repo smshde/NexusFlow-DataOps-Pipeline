@@ -280,7 +280,7 @@ module "msk" {
   source = "../../modules/msk"
 
   cluster_name  = "${local.name}-kafka" # nexusflow-dev-kafka
-  kafka_version = "3.6.0"               # update for newer stable version.
+  kafka_version = "3.9.x"                # 3.6.0 being phased out by AWS
   instance_type = "kafka.t3.small"      # budget friendly option for dev
   # ⚠️ scale up to "kafka.m5.large" for prod
   broker_count = 2 # minimum for dev

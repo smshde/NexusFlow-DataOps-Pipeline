@@ -138,7 +138,13 @@ resource "aws_iam_role_policy" "airflow_permissions" {
           "emr-serverless:GetJobRun",
           "emr-serverless:CancelJobRun",
           "emr-serverless:ListJobRuns",
-          "emr-serverless:GetApplication"
+          "emr-serverless:GetApplication",
+          # EMR Serverless apps auto-stop after idle timeout; StartJobRun
+          # on a stopped app implicitly calls StartApplication — without
+          # this the operator throws AccessDeniedException on the
+          # *second* DAG run after the app had time to idle out.
+          "emr-serverless:StartApplication",
+          "emr-serverless:StopApplication"
         ]
         Resource = ["*"]
       },

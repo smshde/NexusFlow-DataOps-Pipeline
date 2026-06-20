@@ -74,6 +74,10 @@ ORDER_SCHEMA = StructType([
     StructField("notes",                       StringType(),            True),
     StructField("_ingestion_ts",               StringType(),            True),
     StructField("_source",                     StringType(),            True),
+    # Spark's columnNameOfCorruptRecord only populates a column that's
+    # part of the schema — process_orders() filters on this column, which
+    # doesn't exist post-read unless declared here.
+    StructField("_corrupt_record",             StringType(),            True),
 ])
 
 CUSTOMER_SCHEMA = StructType([
@@ -179,6 +183,12 @@ class BronzeToSilverProcessor:
             .json(input_path)
         )
 
+        # Spark 2.3+ disallows queries against a raw JSON/CSV source when
+        # the only referenced column is the corrupt-record column (which
+        # .filter(col("_corrupt_record")...) triggers) — cache materializes
+        # the DataFrame so subsequent filters query the cached form instead
+        # of replanning against the raw source.
+        df_raw.cache()
         initial_count = df_raw.count()
         logger.info(f"  Raw orders read: {initial_count:,}")
 
