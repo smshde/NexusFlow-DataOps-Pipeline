@@ -14,8 +14,9 @@ Supports both batch file generation and streaming to Kafka.
 import json                                       # For JSON serialization
 import random                                     # For random data generation
 import uuid                                       # For unique identifiers
-import csv                                        # For CSV writing 
+import csv                                        # For CSV writing
 import xml.etree.ElementTree as ET                # For XML generation
+import boto3                                      # For uploading batch output to S3 bronze
 from datetime import datetime, timedelta, timezone # For date handling
 from dataclasses import dataclass, asdict, field  # For data modeling                                       
 from typing import Optional, Generator      # For type hints and generator functions
@@ -464,11 +465,20 @@ if __name__ == "__main__":
     os.makedirs(args.output_dir, exist_ok=True)
     gen = EcommerceDataGenerator(num_customers=args.num_customers)
 
+    # bronze_to_silver.py reads customers from bronze/customers/*.jsonl (no
+    # date partition — it's reference/dimension data) and inventory from
+    # bronze/inventory/{date}/*.csv (date partition matching Airflow's
+    # {{ ds }}). This batch job only ever produces one snapshot per run,
+    # so "today" is the only date that's ever correct for it.
+    s3_bronze_bucket = os.environ.get("S3_BRONZE_BUCKET")
+    snapshot_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
     if args.mode in ("batch", "all"):
         print("📦 Generating batch data...")
 
         # Customers
-        gen.save_customers_json(f"{args.output_dir}/customers.jsonl")
+        customers_file = f"{args.output_dir}/customers.jsonl"
+        gen.save_customers_json(customers_file)
 
         # Orders (write in chunks)
         orders_file = f"{args.output_dir}/orders.jsonl"
@@ -480,13 +490,23 @@ if __name__ == "__main__":
         print(f"✅ Orders JSONL written to {orders_file}")
 
         # Inventory
-        gen.generate_inventory_csv(f"{args.output_dir}/inventory.csv")
+        inventory_file = f"{args.output_dir}/inventory.csv"
+        gen.generate_inventory_csv(inventory_file)
 
         # Reviews
         reviews_xml = gen.generate_reviews_xml(10_000)
         with open(f"{args.output_dir}/reviews.xml", "w") as f:
             f.write(reviews_xml)
         print(f"✅ Reviews XML written")
+
+        if s3_bronze_bucket:
+            s3 = boto3.client("s3")
+            s3.upload_file(customers_file, s3_bronze_bucket, "bronze/customers/customers.jsonl")
+            print(f"✅ Uploaded customers.jsonl to s3://{s3_bronze_bucket}/bronze/customers/")
+            s3.upload_file(inventory_file, s3_bronze_bucket, f"bronze/inventory/{snapshot_date}/inventory.csv")
+            print(f"✅ Uploaded inventory.csv to s3://{s3_bronze_bucket}/bronze/inventory/{snapshot_date}/")
+        else:
+            print("⚠️  S3_BRONZE_BUCKET not set — customers/inventory stay local only, bronze_to_silver will find nothing")
 
     print("\n🎉 Data generation complete!")
     print(f"   Output directory: {args.output_dir}")

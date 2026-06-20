@@ -316,6 +316,17 @@ resource "aws_iam_role_policy" "app_permissions" {
           "redshift-serverless:GetCredentials"
         ]
         Resource = ["*"]
+      },
+      {
+        # datagen-batch Job uploads customers.jsonl/inventory.csv here —
+        # bronze_to_silver.py can't process what was never uploaded.
+        Sid    = "S3BronzeUpload"
+        Effect = "Allow"
+        Action = ["s3:PutObject"]
+        Resource = [
+          "arn:aws:s3:::${var.lakehouse_bucket}/bronze/customers/*",
+          "arn:aws:s3:::${var.lakehouse_bucket}/bronze/inventory/*"
+        ]
       }
     ]
   })

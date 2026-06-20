@@ -160,7 +160,7 @@ class BronzeToSilverProcessor:
                  bronze_bucket: str, silver_bucket: str):
         self.spark = spark
         self.env = env
-        self.bronze_base = f"s3://{bronze_bucket}"
+        self.bronze_base = f"s3://{bronze_bucket}/bronze"
         self.silver_base = f"s3://{silver_bucket}"
         self._metrics = {}
 

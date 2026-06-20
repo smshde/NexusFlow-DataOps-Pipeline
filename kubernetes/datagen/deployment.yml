@@ -159,7 +159,7 @@ spec:
                   valueFrom:
                     configMapKeyRef:
                       name: nexusflow-config
-                      key: BRONZE_BUCKET
+                      key: S3_BRONZE_BUCKET
 
               resources:
                 requests:
