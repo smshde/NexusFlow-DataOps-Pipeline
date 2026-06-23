@@ -30,6 +30,7 @@ from airflow.providers.amazon.aws.sensors.emr import EmrServerlessJobSensor
 from airflow.providers.amazon.aws.operators.glue_crawler import GlueCrawlerOperator
 from airflow.providers.amazon.aws.sensors.s3 import S3KeySensor
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
 from airflow.utils.trigger_rule import TriggerRule
 
@@ -218,68 +219,55 @@ with DAG(
     # ── DBT TRANSFORMATIONS: SILVER → GOLD ────────────────
     @task_group(group_id="dbt_transformations")
     def dbt_group():
+        # The scheduler image (src/airflow/Dockerfile) has no dbt binary
+        # and no dbt_project/ — subprocess.run(cwd="/app/dbt_project")
+        # used to throw FileNotFoundError. dbt has its own purpose-built
+        # image+ServiceAccount+IRSA (kubernetes/dbt/cronjob.yml) that
+        # were already provisioned but unused by this DAG. Launching that
+        # image via KPO instead of running dbt inside the scheduler.
+        # Requires kubernetes/dbt/scheduler-pod-launcher-rbac.yml (grants
+        # airflow-scheduler SA pod-launch rights in the nexusflow
+        # namespace — multiNamespaceMode is off, so this is namespace-
+        # scoped rather than cluster-wide).
+        from kubernetes.client import models as k8s
 
-        @task(task_id="dbt_run_silver")
-        def dbt_run_silver(**context) -> dict:
-            """Run dbt silver models."""
-            import subprocess
-            date = context["ds"]
-            result = subprocess.run(
-                [
-                    "dbt", "run",
-                    "--select", "tag:silver",
-                    "--vars", json.dumps({"execution_date": date}),
-                    "--profiles-dir", "/app/dbt_project",
-                    "--target", ENV,
-                ],
-                capture_output=True, text=True, cwd="/app/dbt_project"
+        env_from = [
+            k8s.V1EnvFromSource(config_map_ref=k8s.V1ConfigMapEnvSource(name="nexusflow-config")),
+            k8s.V1EnvFromSource(secret_ref=k8s.V1SecretEnvSource(name="nexusflow-secrets")),
+        ]
+
+        def make_dbt_task(task_id: str, command: str) -> KubernetesPodOperator:
+            return KubernetesPodOperator(
+                task_id=task_id,
+                namespace="nexusflow",
+                name=f"nexusflow-{task_id.replace('_', '-')}",
+                image=DBT_IMAGE,
+                service_account_name="nexusflow-dbt-sa",
+                env_from=env_from,
+                cmds=["/bin/bash", "-c"],
+                arguments=[command],
+                get_logs=True,
+                is_delete_operator_pod=True,
+                in_cluster=True,
+                startup_timeout_seconds=120,
             )
-            if result.returncode != 0:
-                raise RuntimeError(f"dbt silver failed:\n{result.stderr}")
-            logger.info(result.stdout)
-            return {"status": "success", "stdout": result.stdout}
 
-        @task(task_id="dbt_run_gold")
-        def dbt_run_gold(**context) -> dict:
-            """Run dbt gold models."""
-            import subprocess
-            date = context["ds"]
-            result = subprocess.run(
-                [
-                    "dbt", "run",
-                    "--select", "tag:gold",
-                    "--vars", json.dumps({"execution_date": date}),
-                    "--profiles-dir", "/app/dbt_project",
-                    "--target", ENV,
-                ],
-                capture_output=True, text=True, cwd="/app/dbt_project"
-            )
-            if result.returncode != 0:
-                raise RuntimeError(f"dbt gold failed:\n{result.stderr}")
-            logger.info(result.stdout)
-            return {"status": "success", "stdout": result.stdout}
-
-        @task(task_id="dbt_test")
-        def dbt_test(**context) -> dict:
-            """Run dbt tests on gold layer."""
-            import subprocess
-            result = subprocess.run(
-                [
-                    "dbt", "test",
-                    "--select", "tag:gold",
-                    "--profiles-dir", "/app/dbt_project",
-                    "--target", ENV,
-                    "--store-failures",
-                ],
-                capture_output=True, text=True, cwd="/app/dbt_project"
-            )
-            if result.returncode != 0:
-                raise RuntimeError(f"dbt tests failed:\n{result.stderr}")
-            return {"status": "success"}
-
-        run_silver = dbt_run_silver()
-        run_gold = dbt_run_gold()
-        run_tests = dbt_test()
+        run_silver = make_dbt_task(
+            "dbt_run_silver",
+            f"set -e; dbt deps --profiles-dir /app/dbt_project --target {ENV} && "
+            f"dbt run --profiles-dir /app/dbt_project --target {ENV} "
+            f'--select tag:silver --vars \'{{"execution_date": "{{{{ ds }}}}"}}\'',
+        )
+        run_gold = make_dbt_task(
+            "dbt_run_gold",
+            f"dbt run --profiles-dir /app/dbt_project --target {ENV} "
+            f'--select tag:gold --vars \'{{"execution_date": "{{{{ ds }}}}"}}\'',
+        )
+        run_tests = make_dbt_task(
+            "dbt_test",
+            f"dbt test --profiles-dir /app/dbt_project --target {ENV} "
+            f"--select tag:gold --store-failures",
+        )
 
         run_silver >> run_gold >> run_tests
 

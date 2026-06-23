@@ -332,6 +332,7 @@ kubectl create configmap airflow-dynamic-config \
   --from-literal=AIRFLOW_VAR_NEXUSFLOW_SILVER_BUCKET="$S3_SILVER_BUCKET" \
   --from-literal=AIRFLOW_VAR_NEXUSFLOW_GOLD_BUCKET="$S3_GOLD_BUCKET" \
   --from-literal=AIRFLOW_VAR_NEXUSFLOW_ENV="dev" \
+  --from-literal=AIRFLOW_VAR_NEXUSFLOW_DBT_IMAGE="$ECR_REGISTRY/nexusflow-dbt:latest" \
   --from-literal=AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER="s3://$S3_LOGS_BUCKET/airflow-logs"
 pass "Airflow dynamic ConfigMap created"
 
@@ -376,6 +377,10 @@ info "Step 11: Deploying application pods..."
 kubectl apply -f kubernetes/datagen/deployment.yml
 kubectl apply -f kubernetes/kafka/kafka-connect-deployment.yml
 kubectl apply -f kubernetes/dbt/cronjob.yml
+# DAG's dbt_transformations group launches KubernetesPodOperator pods in
+# this namespace — airflow-scheduler SA (namespace airflow) needs explicit
+# cross-namespace pod-launch rights since multiNamespaceMode is off.
+kubectl apply -f kubernetes/dbt/scheduler-pod-launcher-rbac.yml
 kubectl apply -f kubernetes/dashboard/deployment.yml 2>/dev/null || true
 pass "Application pods deployed"
 

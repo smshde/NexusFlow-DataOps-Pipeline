@@ -1,0 +1,39 @@
+---
+# ============================================================
+# NexusFlow — Cross-Namespace Pod-Launcher RBAC for dbt KPO tasks
+# File: kubernetes/dbt/scheduler-pod-launcher-rbac.yml
+#
+# Airflow's airflow-scheduler ServiceAccount lives in the "airflow"
+# namespace. The chart's own pod-launcher Role/RoleBinding only cover
+# that namespace (multiNamespaceMode is off — left off deliberately:
+# a namespace-scoped grant here is less privilege than flipping that
+# chart setting cluster-wide). dbt runs via KubernetesPodOperator in
+# the "nexusflow" namespace (so it can use nexusflow-dbt-sa's Redshift
+# IRSA), so the scheduler SA needs explicit pod-launch rights there.
+# ============================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: airflow-pod-launcher-role
+  namespace: nexusflow
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: airflow-pod-launcher-rolebinding
+  namespace: nexusflow
+subjects:
+  - kind: ServiceAccount
+    name: airflow-scheduler
+    namespace: airflow
+roleRef:
+  kind: Role
+  name: airflow-pod-launcher-role
+  apiGroup: rbac.authorization.k8s.io

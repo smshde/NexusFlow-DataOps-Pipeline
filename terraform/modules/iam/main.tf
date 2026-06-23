@@ -181,7 +181,11 @@ resource "aws_iam_role_policy" "airflow_permissions" {
         Effect = "Allow"
         Action = ["glue:GetCrawler", "glue:StartCrawler",
           "glue:GetCrawlerMetrics", "glue:GetDatabase",
-        "glue:GetTable"]
+          "glue:GetTable",
+          # GlueCrawlerOperator manages tags on the crawler ARN as part
+          # of each run (status polling + tag sync) — GetTags alone
+          # wasn't enough, it also writes/removes tags.
+          "glue:GetTags", "glue:TagResource", "glue:UntagResource"]
         Resource = ["*"]
       }
     ]

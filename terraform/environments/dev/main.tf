@@ -139,32 +139,37 @@ module "eks" {
 
   node_groups = {
     # ── GENERAL WORKLOADS (Airflow, API, datagen) ────────
+    # Cost finding 2026-06-22: EC2-Compute was the single biggest line
+    # item ($7.02 of $17.6 over a 5-day test window) — m5.xlarge x2
+    # on-demand billed by uptime, hit on every redeploy cycle. Downsized
+    # to t3.medium, but desired_size=1 alone caused
+    # "0/1 nodes available: Insufficient memory" for airflow-scheduler
+    # (postgres+statsd+webserver already used 83% of one t3.medium's
+    # 3.3GB allocatable mem) — no cluster-autoscaler/karpenter is
+    # installed, so min/max_size never auto-provisions a 2nd node for
+    # Pending pods; desired_size is the only thing that actually adds
+    # capacity. 2x t3.medium fits the full Airflow stack at ~1/5 the
+    # cost of 2x m5.xlarge. Bump back to m5.xlarge only for real
+    # prod-scale workload.
+    # 2026-06-23: desired_size=2 still hit "Insufficient memory" for the
+    # one-shot nexusflow-datagen-batch Job (73%/83% mem already used by
+    # airflow+monitoring+nexusflow stacks across 2 nodes). Bumped to 3 —
+    # still ~1/4 the cost of the original m5.xlarge x2 setup, restores
+    # headroom for one-shot Jobs/CronJobs without resorting to a bigger
+    # instance type.
     general = {
-      instance_types = var.eks_node_instance_types # ["m5.xlarge","m5.2xlarge"]
-      # ⚠️ scale down to ["t3.medium"] to cut the cost
-      # during initial testing only
-      min_size     = 2 # Keeping min 2 to maintain availability
-      max_size     = 6 # ⚠️ increase for prod. 
-      desired_size = 2 # ⚠️ increase for prod.
-    }
-
-    # ── SPARK WORKLOADS (EMR on EKS, isolated) ───────────
-    spark = {
-      instance_types = ["r6i.xlarge", "r6i.2xlarge"] # memory-optimized for Spark , SPOT instance
-      # ⚠️ choose ["r5.xlarge"] if r6i unavailable
-      min_size     = 0  # if no Spark jobs running — saves cost
-      max_size     = 10 # ⚠️ change based on number of prallel Spark job processing
-      desired_size = 0  # starts at 0 — auto-scales when job submitted
-      labels = {
-        workload = "spark"
-      }
-      taints = [{
-        key    = "workload"
-        value  = "spark"
-        effect = "NO_SCHEDULE" # only Spark pods schedule on these nodes
-      }]
+      instance_types = ["t3.medium"]
+      min_size     = 1
+      max_size     = 6 # ⚠️ increase for prod.
+      desired_size = 3
     }
   }
+  # Removed "spark" node group (r6i.xlarge/2xlarge, taint workload=spark)
+  # — confirmed dead weight 2026-06-19: nothing in kubernetes/ manifests
+  # tolerates that taint. Actual Spark execution is EMR Serverless, not
+  # EKS pods. Was already min_size=0/desired_size=0 so $0 cost, but
+  # removing it simplifies the cluster and removes a thing that could
+  # silently start costing money if ever mis-tainted.
 
   tags = local.tags
 }
