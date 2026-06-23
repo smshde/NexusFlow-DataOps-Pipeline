@@ -38,13 +38,16 @@ spec:
                 - |
                   set -e
                   echo "Starting dbt run..."
-                  dbt deps    --profiles-dir /app/dbt_project --target dev
-                  dbt run     --profiles-dir /app/dbt_project --target dev \
+                  # --project-dir required — dbt has no cwd fallback for
+                  # locating dbt_project.yml, and the image's WORKDIR
+                  # (/app) isn't where it lives (/app/dbt_project).
+                  dbt deps    --project-dir /app/dbt_project --profiles-dir /app/dbt_project --target dev
+                  dbt run     --project-dir /app/dbt_project --profiles-dir /app/dbt_project --target dev \
                               --select tag:silver tag:gold
-                  dbt test    --profiles-dir /app/dbt_project --target dev \
+                  dbt test    --project-dir /app/dbt_project --profiles-dir /app/dbt_project --target dev \
                               --select tag:gold
                   dbt docs generate \
-                              --profiles-dir /app/dbt_project --target dev
+                              --project-dir /app/dbt_project --profiles-dir /app/dbt_project --target dev
                   echo "dbt complete ✅"
               envFrom:
                 - configMapRef:

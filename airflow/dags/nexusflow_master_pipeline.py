@@ -252,20 +252,30 @@ with DAG(
                 startup_timeout_seconds=120,
             )
 
+        # dbt has no concept of a "cwd default" for project lookup — it
+        # always needs --project-dir explicitly. --profiles-dir alone
+        # left dbt looking for dbt_project.yml in the container's WORKDIR
+        # (/app), not /app/dbt_project where it actually lives, throwing
+        # "No dbt_project.yml found at expected path /app/dbt_project.yml".
+        # kubernetes/dbt/cronjob.yml's args have this same gap (relies on
+        # the image's CMD default, which never fires once args override
+        # it) — never caught before since nothing exercised that path.
+        DBT_PROJECT_DIR = "/app/dbt_project"
+
         run_silver = make_dbt_task(
             "dbt_run_silver",
-            f"set -e; dbt deps --profiles-dir /app/dbt_project --target {ENV} && "
-            f"dbt run --profiles-dir /app/dbt_project --target {ENV} "
+            f"set -e; dbt deps --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR} --target {ENV} && "
+            f"dbt run --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR} --target {ENV} "
             f'--select tag:silver --vars \'{{"execution_date": "{{{{ ds }}}}"}}\'',
         )
         run_gold = make_dbt_task(
             "dbt_run_gold",
-            f"dbt run --profiles-dir /app/dbt_project --target {ENV} "
+            f"dbt run --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR} --target {ENV} "
             f'--select tag:gold --vars \'{{"execution_date": "{{{{ ds }}}}"}}\'',
         )
         run_tests = make_dbt_task(
             "dbt_test",
-            f"dbt test --profiles-dir /app/dbt_project --target {ENV} "
+            f"dbt test --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR} --target {ENV} "
             f"--select tag:gold --store-failures",
         )
 
