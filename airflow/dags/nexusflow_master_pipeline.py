@@ -266,7 +266,11 @@ with DAG(
             "dbt_run_silver",
             f"set -e; dbt deps --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR} --target {ENV} && "
             f"dbt run --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR} --target {ENV} "
-            f'--select tag:silver --vars \'{{"execution_date": "{{{{ ds }}}}"}}\'',
+            f'--select tag:silver --vars \'{{"execution_date": "{{{{ ds }}}}"}}\' && '
+            # dbt run never executes snapshots regardless of --select —
+            # they need the separate `dbt snapshot` command. Runs after
+            # silver models since snapshot_customers reads silver_customers.
+            f"dbt snapshot --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR} --target {ENV}",
         )
         run_gold = make_dbt_task(
             "dbt_run_gold",

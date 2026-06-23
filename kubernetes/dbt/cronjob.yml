@@ -44,6 +44,9 @@ spec:
                   dbt deps    --project-dir /app/dbt_project --profiles-dir /app/dbt_project --target dev
                   dbt run     --project-dir /app/dbt_project --profiles-dir /app/dbt_project --target dev \
                               --select tag:silver tag:gold
+                  # dbt run never executes snapshots regardless of
+                  # --select — needs the separate `dbt snapshot` command.
+                  dbt snapshot --project-dir /app/dbt_project --profiles-dir /app/dbt_project --target dev
                   dbt test    --project-dir /app/dbt_project --profiles-dir /app/dbt_project --target dev \
                               --select tag:gold
                   dbt docs generate \
