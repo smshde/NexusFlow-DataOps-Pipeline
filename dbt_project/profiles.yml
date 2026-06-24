@@ -5,7 +5,14 @@ nexusflow:
     dev:
       type: redshift
       method: iam
-      cluster_id: nexusflow-dev-wg
+      # cluster_id is for PROVISIONED Redshift only — this is Redshift
+      # Serverless. Setting it forced dbt-redshift down the provisioned
+      # GetClusterCredentials IAM path against a workgroup name that
+      # isn't a real cluster, which hung (no region set either) until
+      # connect_timeout fired: "Runtime Error: The read operation timed
+      # out". Explicit region + no cluster_id fixes the serverless IAM
+      # credential path (redshift-serverless:GetCredentials).
+      region: ca-central-1
       host:     "{{ env_var('REDSHIFT_HOST') }}"
       port:     5439
       dbname:   nexusflow
