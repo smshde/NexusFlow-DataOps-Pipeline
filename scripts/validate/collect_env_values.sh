@@ -50,6 +50,14 @@ REDSHIFT=$(aws redshift-serverless list-workgroups \
   --query 'workgroups[0].endpoint.address' \
   --output text)
 
+# Needed by dbt's on-run-start CREATE EXTERNAL SCHEMA hook (Spectrum
+# over Spark's silver/ output) — the role Redshift assumes to read Glue
+# + S3, not an IRSA/OIDC role.
+REDSHIFT_SPECTRUM_ROLE_ARN=$(aws iam get-role \
+  --role-name nexusflow-dev-wg-role \
+  --query 'Role.Arn' \
+  --output text)
+
 # Generate Fernet key for Airflow
 FERNET=$(python3 -c \
   "from cryptography.fernet import Fernet; \
@@ -70,6 +78,7 @@ REDSHIFT_HOST=$REDSHIFT
 REDSHIFT_PORT=5439
 REDSHIFT_DB=nexusflow
 REDSHIFT_USER=nexusflow_admin
+REDSHIFT_SPECTRUM_ROLE_ARN=$REDSHIFT_SPECTRUM_ROLE_ARN
 S3_BRONZE_BUCKET=nexusflow-dev-lakehouse
 S3_SILVER_BUCKET=nexusflow-dev-lakehouse
 S3_GOLD_BUCKET=nexusflow-dev-lakehouse

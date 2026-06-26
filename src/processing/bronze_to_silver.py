@@ -165,7 +165,7 @@ class BronzeToSilverProcessor:
         self.spark = spark
         self.env = env
         self.bronze_base = f"s3://{bronze_bucket}/bronze"
-        self.silver_base = f"s3://{silver_bucket}"
+        self.silver_base = f"s3://{silver_bucket}/silver"
         self._metrics = {}
 
     def process_orders(self, date_partition: str) -> None:

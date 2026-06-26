@@ -14,6 +14,16 @@ snapshot-paths:    ["snapshots"]
 target-path:  "target"
 clean-targets: ["target", "dbt_packages"]
 
+# ── BOOTSTRAP: SPECTRUM EXTERNAL SCHEMA OVER SPARK'S SILVER ──────
+# silver_lake source (models/silver/schema.yml) reads Spark's S3 silver
+# output via Spectrum. CREATE EXTERNAL SCHEMA requires CREATE privilege
+# on the database — granted once to the dbt IRSA role via a one-time
+# admin bootstrap (scripts/deploy/full_deploy.sh, since the IAM-mapped
+# role can't grant privileges to itself). With that grant in place this
+# hook is self-healing: idempotent, safe on every run/fresh deploy.
+on-run-start:
+  - "CREATE EXTERNAL SCHEMA IF NOT EXISTS silver_lake FROM DATA CATALOG DATABASE 'nexusflow_dev_silver' IAM_ROLE '{{ env_var(\"REDSHIFT_SPECTRUM_ROLE_ARN\") }}' REGION 'ca-central-1';"
+
 # ── MODEL CONFIGURATIONS ──────────────────────────────────
 models:
   nexusflow:
@@ -23,21 +33,24 @@ models:
       +schema: bronze
       +tags: ["bronze", "raw"]
 
-    # Silver — incremental tables
+    # Silver — thin views over Spark's own silver/ Parquet output
+    # (Spectrum external schema silver_lake). Spark already dedups,
+    # types, and masks PII — dbt doesn't re-derive silver from bronze.
     silver:
-      +materialized: incremental
-      +incremental_strategy: merge
+      +materialized: view
       +schema: silver
       +tags: ["silver", "cleaned"]
-      +on_schema_change: append_new_columns
 
     # Gold — facts and dimensions
     gold:
       +materialized: table
       +schema: gold
       +tags: ["gold", "business"]
-      +post-hook:
-        - "GRANT SELECT ON {{ this }} TO GROUP analysts"
+      # Removed post-hook "GRANT SELECT ... TO GROUP analysts" — that
+      # Redshift group is never provisioned anywhere in this project
+      # (no terraform resource, no setup script), so every gold model
+      # run would fail with 'group "analysts" does not exist'. Add back
+      # if/when a real analyst-access group is provisioned.
 
       facts:
         +materialized: incremental

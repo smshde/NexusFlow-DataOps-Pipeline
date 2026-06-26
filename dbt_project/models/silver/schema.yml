@@ -42,16 +42,21 @@ models:
                        checkout_start,search,wishlist_add,review_view,click]
 
 sources:
-  - name: bronze
-    database: nexusflow_external
-    schema: bronze
+  # Redshift Spectrum external schema over Spark's own silver output
+  # (s3://lakehouse/silver/, crawled into Glue nexusflow_dev_silver).
+  # silver_orders/customers/clickstream above are thin views over these
+  # tables — dbt does not read raw bronze or re-derive silver itself.
+  # External schema bootstrap: dbt_project.yml on-run-start hook.
+  - name: silver_lake
+    database: nexusflow
+    schema: silver_lake
     loader: spark_emr
-    loaded_at_field: _ingestion_ts
+    loaded_at_field: _processed_ts
     freshness:
       warn_after:  {count: 12, period: hour}
       error_after: {count: 24, period: hour}
     tables:
-      - name: raw_orders
-      - name: raw_customers
-      - name: raw_clickstream
-      - name: raw_inventory
+      - name: orders
+      - name: customers
+      - name: clickstream
+      - name: inventory

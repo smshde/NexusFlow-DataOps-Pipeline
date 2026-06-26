@@ -126,7 +126,8 @@ for NS in nexusflow kafka airflow; do
     --from-literal=MSK_BOOTSTRAP_SERVERS="$MSK_BOOTSTRAP_SERVERS" \
     --from-literal=REDSHIFT_HOST="$REDSHIFT_HOST" \
     --from-literal=AWS_REGION="$REGION" \
-    --from-literal=REDSHIFT_USER="nexusflow_admin"
+    --from-literal=REDSHIFT_USER="nexusflow_admin" \
+    --from-literal=REDSHIFT_SPECTRUM_ROLE_ARN="$REDSHIFT_SPECTRUM_ROLE_ARN"
 done
 
 kubectl delete secret alertmanager-slack -n monitoring 2>/dev/null || true
@@ -143,6 +144,36 @@ kubectl create secret generic airflow-fernet-secret \
   --namespace airflow \
   --from-literal=fernet-key="$FERNET"
 pass "Secrets created"
+
+# ── STEP 8.55: BOOTSTRAP REDSHIFT PERMISSIONS FOR DBT ────
+# dbt connects via IAM role federation (nexusflow-dev-dbt-irsa), which
+# Redshift maps to a database user literally named "IAMR:nexusflow-dev-
+# dbt-irsa". That role can't grant privileges to itself, so this must
+# run once as the real admin (master password from Secrets Manager,
+# created automatically by Redshift Serverless's managed-admin-password
+# feature). CREATE on the database is enough — it covers both dbt's own
+# schema creation (silver/gold/snapshots/etc, all "schema: x" configs in
+# dbt_project.yml use CREATE SCHEMA IF NOT EXISTS) and the on-run-start
+# CREATE EXTERNAL SCHEMA hook for Spectrum. Idempotent — safe to re-run.
+info "Step 8.55: Bootstrapping Redshift permissions for dbt..."
+pip install redshift_connector --quiet 2>/dev/null || true
+REDSHIFT_ADMIN_PW=$(aws secretsmanager get-secret-value \
+  --secret-id "redshift!nexusflow-${NEXUSFLOW_ENV}-ns-nexusflow_admin" \
+  --region $REGION --query SecretString --output text \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['password'])")
+PW="$REDSHIFT_ADMIN_PW" REDSHIFT_HOST="$REDSHIFT_HOST" python3 -c "
+import os, redshift_connector
+conn = redshift_connector.connect(
+    host=os.environ['REDSHIFT_HOST'], port=5439, database='nexusflow',
+    user='nexusflow_admin', password=os.environ['PW'],
+)
+cur = conn.cursor()
+cur.execute('GRANT CREATE, TEMP ON DATABASE nexusflow TO \"IAMR:nexusflow-dev-dbt-irsa\";')
+conn.commit()
+print('Granted CREATE, TEMP on database nexusflow to IAMR:nexusflow-dev-dbt-irsa')
+"
+unset REDSHIFT_ADMIN_PW
+pass "Redshift dbt permissions bootstrapped"
 
 # ── STEP 8.5: IRSA TRUST POLICIES ───────────────────────
 info "Step 8.5: Configuring IRSA trust policies..."
