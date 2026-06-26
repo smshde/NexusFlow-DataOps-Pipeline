@@ -28,6 +28,50 @@ EOF
   fi
 done
 
+# ── DELETE LOADBALANCER SERVICES + WAIT FOR ELB/ENI RELEASE ──
+# Namespace delete alone GC's these eventually, but doesn't wait —
+# leftover Classic ELBs (airflow webserver, grafana) hold ENIs in
+# every subnet and block terraform destroy's VPC deletion later
+# (DependencyViolation) if EKS gets torn down before the cloud-
+# controller-manager finishes deprovisioning them. Deleting explicitly
+# and wait here, while EKS/cloud-controller-manager still exist.
+echo -e "${CYAN}Deleting LoadBalancer-type Services and waiting for ELB teardown...${NC}"
+LB_SVCS=$(kubectl get svc -A -o json 2>/dev/null | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for item in data.get('items', []):
+    if item.get('spec', {}).get('type') == 'LoadBalancer':
+        print(f\"{item['metadata']['namespace']} {item['metadata']['name']}\")
+" || true)
+if [ -n "$LB_SVCS" ]; then
+  echo "$LB_SVCS" | while read -r NS NAME; do
+    [ -n "$NS" ] && kubectl delete svc "$NAME" -n "$NS" --ignore-not-found=true
+  done
+  echo "  Waiting for k8s-elb-* Classic ELBs to disappear..."
+  for i in $(seq 1 30); do
+    REMAINING=$(aws elb describe-load-balancers --region "$REGION" \
+      --query "LoadBalancerDescriptions[?starts_with(LoadBalancerName,'k8s-elb')].LoadBalancerName" \
+      --output text 2>/dev/null)
+    [ -z "$REMAINING" ] && break
+    sleep 10
+  done
+  echo "  Waiting for k8s-elb-* ENIs/security groups to release..."
+  for i in $(seq 1 30); do
+    SG_IDS=$(aws ec2 describe-security-groups --region "$REGION" \
+      --filters "Name=group-name,Values=k8s-elb-*" \
+      --query 'SecurityGroups[*].GroupId' --output text 2>/dev/null)
+    [ -z "$SG_IDS" ] && break
+    sleep 10
+  done
+  if [ -n "${SG_IDS:-}" ]; then
+    for SG in $SG_IDS; do
+      aws ec2 delete-security-group --group-id "$SG" --region "$REGION" 2>/dev/null \
+        && echo "  ✅ Deleted leftover SG $SG" || true
+    done
+  fi
+  echo -e "${GREEN}✅ LoadBalancer cleanup complete${NC}"
+fi
+
 # ── REMOVE HELM RELEASES ─────────────────────────────────
 echo -e "${CYAN}Removing Helm releases...${NC}"
 helm uninstall airflow         -n airflow    2>/dev/null || true
