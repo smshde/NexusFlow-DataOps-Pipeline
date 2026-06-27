@@ -80,7 +80,10 @@ orders_enriched as (
         o.session_id,
 
         -- ── FOREIGN KEYS ──
-        coalesce(c.customer_sk, -1)                            as customer_sk,
+        -- customer_sk is a generate_surrogate_key() hash (varchar), not an
+        -- int — sentinel must match type or COALESCE errors with "types
+        -- character varying and integer cannot be matched".
+        coalesce(c.customer_sk, '-1')                          as customer_sk,
         d_order.date_sk                                        as order_date_sk,
         d_delivery.date_sk                                     as delivery_date_sk,
 
@@ -169,7 +172,7 @@ orders_enriched as (
         o._ingestion_ts,
         o._processed_ts,
         o._pipeline_version,
-        current_timestamp()                                     as _dbt_updated_at
+        current_timestamp                                     as _dbt_updated_at
 
     from silver_orders o
     left join dim_customers  c

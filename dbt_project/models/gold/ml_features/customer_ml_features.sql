@@ -30,13 +30,33 @@
 with
 
 snapshot_date as (
-    select current_date() as today
+    select current_date as today
+),
+
+-- ── MODE LOOKUPS (per-customer most frequent value) ──────
+payment_mode as (
+    {{ mode_lookup_cte(ref('fact_orders'), 'customer_id', 'payment_method') }}
+),
+shipping_mode as (
+    {{ mode_lookup_cte(ref('fact_orders'), 'customer_id', 'shipping_method') }}
+),
+utm_source_mode as (
+    {{ mode_lookup_cte(ref('fact_orders'), 'customer_id', 'utm_source') }}
+),
+device_mode as (
+    {{ mode_lookup_cte(ref('silver_clickstream'), 'customer_id', 'device_type') }}
+),
+browser_mode as (
+    {{ mode_lookup_cte(ref('silver_clickstream'), 'customer_id', 'browser') }}
+),
+os_mode as (
+    {{ mode_lookup_cte(ref('silver_clickstream'), 'customer_id', 'os') }}
 ),
 
 -- ── ORDER FEATURES ────────────────────────────────────────
 order_features as (
     select
-        customer_id,
+        o.customer_id,
         count(distinct order_id)                                       as total_orders,
         count(distinct case when is_completed = 1
             then order_id end)                                         as completed_orders,
@@ -46,26 +66,30 @@ order_features as (
         avg(case when is_completed = 1 then total_amount end)          as avg_order_value,
         min(order_date)                                                as first_order_date,
         max(order_date)                                                as last_order_date,
-        datediff('day', max(cast(order_date as date)), current_date()) as recency_days,
+        datediff('day', max(cast(order_date as date)), current_date) as recency_days,
         -- Frequency buckets
-        count(distinct case when order_date >= dateadd('day', -30, current_date())
+        count(distinct case when order_date >= dateadd('day', -30, current_date)
             then order_id end)                                         as orders_last_30d,
-        count(distinct case when order_date >= dateadd('day', -90, current_date())
+        count(distinct case when order_date >= dateadd('day', -90, current_date)
             then order_id end)                                         as orders_last_90d,
-        count(distinct case when order_date >= dateadd('day', -365, current_date())
+        count(distinct case when order_date >= dateadd('day', -365, current_date)
             then order_id end)                                         as orders_last_365d,
         -- Revenue buckets
-        sum(case when order_date >= dateadd('day', -30, current_date())
+        sum(case when order_date >= dateadd('day', -30, current_date)
             then total_amount else 0 end)                              as revenue_last_30d,
-        sum(case when order_date >= dateadd('day', -90, current_date())
+        sum(case when order_date >= dateadd('day', -90, current_date)
             then total_amount else 0 end)                              as revenue_last_90d,
+        -- rfm_scores' monetary score reads this column; was missing,
+        -- causing "column o.revenue_last_365d does not exist".
+        sum(case when order_date >= dateadd('day', -365, current_date)
+            then total_amount else 0 end)                              as revenue_last_365d,
         -- Product diversity
         count(distinct order_status)                                   as distinct_statuses,
         avg(item_count)                                                as avg_items_per_order,
-        -- Payment
-        {{ mode_agg('payment_method') }}                               as preferred_payment,
-        {{ mode_agg('shipping_method') }}                              as preferred_shipping,
-        {{ mode_agg('utm_source') }}                                   as primary_acquisition_channel,
+        -- Payment (joined per-customer mode, see CTEs above)
+        max(pm.payment_method)                                         as preferred_payment,
+        max(sm.shipping_method)                                        as preferred_shipping,
+        max(um.utm_source)                                             as primary_acquisition_channel,
         -- Weekend vs weekday
         avg(case when is_weekend then 1.0 else 0.0 end)                as weekend_order_pct,
         avg(order_hour)                                                as avg_order_hour,
@@ -77,14 +101,17 @@ order_features as (
             then order_id end) * 1.0 /
             nullif(count(distinct order_id), 0)                        as refund_rate
 
-    from {{ ref('fact_orders') }}
-    group by 1
+    from {{ ref('fact_orders') }} o
+    left join payment_mode    pm on o.customer_id = pm.customer_id
+    left join shipping_mode   sm on o.customer_id = sm.customer_id
+    left join utm_source_mode um on o.customer_id = um.customer_id
+    group by o.customer_id
 ),
 
 -- ── CLICKSTREAM BEHAVIORAL FEATURES ──────────────────────
 browse_features as (
     select
-        customer_id,
+        c.customer_id,
         count(distinct session_id)                                     as total_sessions,
         count(distinct session_id) * 1.0 /
             nullif(count(distinct date_trunc('day', event_ts)), 0)     as sessions_per_active_day,
@@ -95,9 +122,10 @@ browse_features as (
         count(case when event_type = 'checkout_start' then 1 end)      as checkout_starts,
         avg(time_on_page_sec)                                          as avg_time_on_page_sec,
         avg(scroll_depth_pct)                                          as avg_scroll_depth_pct,
-        {{ mode_agg('device_type') }}                                  as primary_device,
-        {{ mode_agg('browser') }}                                      as primary_browser,
-        {{ mode_agg('os') }}                                           as primary_os,
+        -- Device (joined per-customer mode, see CTEs above)
+        max(dm.device_type)                                            as primary_device,
+        max(bm.browser)                                                as primary_browser,
+        max(om.os)                                                     as primary_os,
         -- Engagement score
         (
             count(case when event_type = 'product_view'   then 1 end) * 1.0 +
@@ -106,11 +134,14 @@ browse_features as (
             count(case when event_type = 'search'         then 1 end) * 2.0
         ) / nullif(count(distinct session_id), 0)                      as engagement_score_per_session,
         max(event_ts)                                                  as last_active_ts,
-        datediff('day', max(cast(event_ts as date)), current_date())   as days_since_last_browse
+        datediff('day', max(cast(event_ts as date)), current_date)   as days_since_last_browse
 
-    from {{ ref('silver_clickstream') }}
-    where customer_id is not null
-    group by 1
+    from {{ ref('silver_clickstream') }} c
+    left join device_mode dm on c.customer_id = dm.customer_id
+    left join browser_mode bm on c.customer_id = bm.customer_id
+    left join os_mode om on c.customer_id = om.customer_id
+    where c.customer_id is not null
+    group by c.customer_id
 ),
 
 -- ── CUSTOMER DIMENSION ────────────────────────────────────
@@ -230,7 +261,7 @@ llm_profile as (
 -- ── FINAL FEATURE SET ─────────────────────────────────────
 final as (
     select
-        current_date()                                  as snapshot_date,
+        current_date                                  as snapshot_date,
         o.customer_id,
         c.email_hash,
         c.loyalty_tier,
@@ -289,7 +320,7 @@ final as (
         -- LLM profile
         lp.customer_profile_text,
         -- Metadata
-        current_timestamp()                             as _feature_created_at,
+        current_timestamp                             as _feature_created_at,
         '{{ var("environment") }}'                      as _environment
 
     from order_features o

@@ -1,6 +1,9 @@
 # ============================================================
-# NexusFlow — FastAPI Dashboard Deployment
+# NexusFlow — FastAPI Serving API Deployment
 # File: kubernetes/dashboard/deployment.yml
+# Despite the directory name, this is not a visual dashboard — it's a
+# read-only REST API over the gold layer (src/serving/fastapi_main.py):
+# revenue KPIs, customer 360, product performance. See src/serving/.
 # ============================================================
 apiVersion: apps/v1
 kind: Deployment
@@ -38,6 +41,11 @@ spec:
                 secretKeyRef:
                   name: nexusflow-secrets
                   key: REDSHIFT_HOST
+            - name: REDSHIFT_SECRET_ARN
+              valueFrom:
+                secretKeyRef:
+                  name: nexusflow-secrets
+                  key: REDSHIFT_SECRET_ARN
           resources:
             requests:
               cpu: 200m

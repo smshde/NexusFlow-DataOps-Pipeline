@@ -60,13 +60,22 @@ class Settings:
 
 settings = Settings()
 
+# dbt's custom-schema naming convention prefixes every schema with the
+# target name (profiles.yml target=dev -> "dbt_dev_"). Queries below were
+# written against bare schema names ("gold.fact_orders") which don't exist
+# in Redshift at all — every query 500'd with InvalidSchemaNameError.
+SCHEMA_PREFIX = f"dbt_{settings.env}_"
+
 # ── DATABASE POOL ─────────────────────────────────────────
 db_pool: Optional[asyncpg.Pool] = None
 
 async def get_db_password() -> str:
     """Fetch Redshift password from Secrets Manager."""
     if settings.secret_arn:
-        client = boto3.client("secretsmanager")
+        # boto3 doesn't read AWS_REGION (only AWS_DEFAULT_REGION) — pod sets
+        # AWS_REGION, so without an explicit region kwarg this raised
+        # botocore.exceptions.NoRegionError at startup.
+        client = boto3.client("secretsmanager", region_name=os.getenv("AWS_REGION", "ca-central-1"))
         response = client.get_secret_value(SecretId=settings.secret_arn)
         secret = json.loads(response["SecretString"])
         return secret["password"]
@@ -83,6 +92,10 @@ async def lifespan(app: FastAPI):
         database=settings.redshift_db,
         user=settings.redshift_user,
         password=password,
+        # Redshift requires SSL on the wire — without this, connection
+        # fails with "no pg_hba.conf entry for host ..., SSL off" before
+        # auth is even evaluated.
+        ssl="require",
         min_size=2,
         max_size=10,
         command_timeout=30,
@@ -190,7 +203,7 @@ async def get_daily_revenue(
 ):
     """Daily revenue KPIs from fact_orders gold layer."""
     start = time.time()
-    rows = await conn.fetch("""
+    rows = await conn.fetch(f"""
         SELECT
             order_date_day                                          AS date,
             count(distinct order_id)                               AS total_orders,
@@ -204,7 +217,7 @@ async def get_daily_revenue(
             round(sum(case when order_status='refunded'
                 then 1 else 0 end)::numeric
                 / nullif(count(*), 0), 4)                         AS refund_rate
-        FROM gold.fact_orders
+        FROM {SCHEMA_PREFIX}gold.fact_orders
         WHERE order_date_day BETWEEN $1 AND $2
         GROUP BY 1
         ORDER BY 1 DESC
@@ -217,7 +230,7 @@ async def get_daily_revenue(
 @app.get("/api/v1/revenue/summary", tags=["revenue"])
 async def get_revenue_summary(conn=Depends(get_db)):
     """Revenue summary: today / 7d / 30d / MTD / YTD."""
-    row = await conn.fetchrow("""
+    row = await conn.fetchrow(f"""
         SELECT
             round(sum(case when order_date_day = current_date
                 and is_completed=1 then total_amount else 0 end)::numeric,2) AS today,
@@ -231,42 +244,16 @@ async def get_revenue_summary(conn=Depends(get_db)):
                 and is_completed=1 then total_amount else 0 end)::numeric,2) AS ytd,
             count(distinct case when order_date_day = current_date
                 then customer_id end)                                         AS unique_customers_today
-        FROM gold.fact_orders
+        FROM {SCHEMA_PREFIX}gold.fact_orders
     """)
     REQUEST_COUNT.labels("GET", "/api/v1/revenue/summary", "200").inc()
     return dict(row)
 
 # ── CUSTOMER ENDPOINTS ────────────────────────────────────
-@app.get("/api/v1/customers/{customer_id}", response_model=CustomerProfile, tags=["customers"])
-async def get_customer_profile(customer_id: str, conn=Depends(get_db)):
-    """Full customer 360 profile from ML features gold layer."""
-    row = await conn.fetchrow("""
-        SELECT
-            f.customer_id,
-            d.loyalty_tier,
-            d.segment,
-            d.age_bracket,
-            d.country,
-            f.total_orders,
-            f.total_revenue,
-            f.recency_days,
-            f.rfm_total_score,
-            f.churn_risk_tier,
-            f.customer_profile_text,
-            d.ltv_band
-        FROM ml_features.customer_ml_features f
-        JOIN gold.dim_customers d
-            ON f.customer_id = d.customer_id
-           AND d._is_current = true
-        WHERE f.customer_id = $1
-          AND f.snapshot_date = current_date
-    """, customer_id)
-
-    if not row:
-        raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found")
-    REQUEST_COUNT.labels("GET", "/api/v1/customers/{customer_id}", "200").inc()
-    return dict(row)
-
+# Static-path routes (/segment/{x}, /top) must be declared before the
+# dynamic /{customer_id} route — Starlette matches routes in declaration
+# order, so /customers/top was being swallowed by /{customer_id} (treating
+# "top" as a customer_id) and 404ing inside the handler.
 @app.get("/api/v1/customers/segment/{segment}", tags=["customers"])
 async def get_customers_by_segment(
     segment: str,
@@ -274,10 +261,10 @@ async def get_customers_by_segment(
     conn=Depends(get_db)
 ):
     """List customers in a given RFM/churn segment."""
-    rows = await conn.fetch("""
+    rows = await conn.fetch(f"""
         SELECT customer_id, loyalty_tier, total_orders, total_revenue,
                recency_days, rfm_total_score, churn_risk_tier
-        FROM ml_features.customer_ml_features
+        FROM {SCHEMA_PREFIX}ml_features.customer_ml_features
         WHERE snapshot_date = current_date
           AND ($1 = 'all' OR churn_risk_tier = $1 OR segment = $1)
         ORDER BY total_revenue DESC
@@ -300,12 +287,42 @@ async def get_top_customers(
     rows = await conn.fetch(f"""
         SELECT customer_id, loyalty_tier, segment, total_orders,
                total_revenue, recency_days, rfm_total_score, churn_risk_tier
-        FROM ml_features.customer_ml_features
+        FROM {SCHEMA_PREFIX}ml_features.customer_ml_features
         WHERE snapshot_date = current_date
         ORDER BY {sort_col} DESC
         LIMIT $1
     """, limit)
     return [dict(r) for r in rows]
+
+@app.get("/api/v1/customers/{customer_id}", response_model=CustomerProfile, tags=["customers"])
+async def get_customer_profile(customer_id: str, conn=Depends(get_db)):
+    """Full customer 360 profile from ML features gold layer."""
+    row = await conn.fetchrow(f"""
+        SELECT
+            f.customer_id,
+            d.loyalty_tier,
+            d.segment,
+            d.age_bracket,
+            d.country,
+            f.total_orders,
+            f.total_revenue,
+            f.recency_days,
+            f.rfm_total_score,
+            f.churn_risk_tier,
+            f.customer_profile_text,
+            d.ltv_band
+        FROM {SCHEMA_PREFIX}ml_features.customer_ml_features f
+        JOIN {SCHEMA_PREFIX}gold.dim_customers d
+            ON f.customer_id = d.customer_id
+           AND d._is_current = true
+        WHERE f.customer_id = $1
+          AND f.snapshot_date = current_date
+    """, customer_id)
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found")
+    REQUEST_COUNT.labels("GET", "/api/v1/customers/{customer_id}", "200").inc()
+    return dict(row)
 
 # ── PRODUCT ENDPOINTS ─────────────────────────────────────
 @app.get("/api/v1/products/performance", response_model=List[ProductPerformance], tags=["products"])
@@ -317,7 +334,7 @@ async def get_product_performance(
     conn=Depends(get_db)
 ):
     """Product performance: revenue, units, return rate."""
-    rows = await conn.fetch("""
+    rows = await conn.fetch(f"""
         SELECT
             i.product_sku,
             i.product_name,
@@ -330,7 +347,7 @@ async def get_product_performance(
                 then 1 else 0 end)::numeric
                 / nullif(count(distinct o.order_id), 0), 4)      AS return_rate,
             count(distinct o.order_id)                            AS order_count
-        FROM gold.fact_orders o,
+        FROM {SCHEMA_PREFIX}gold.fact_orders o,
              o.items i
         WHERE o.order_date_day BETWEEN $1 AND $2
           AND ($3::text IS NULL OR i.category = $3)
@@ -344,10 +361,10 @@ async def get_product_performance(
 @app.get("/api/v1/inventory/low-stock", response_model=List[InventoryStatus], tags=["inventory"])
 async def get_low_stock_items(conn=Depends(get_db)):
     """Items at or below reorder point."""
-    rows = await conn.fetch("""
+    rows = await conn.fetch(f"""
         SELECT warehouse_id, product_sku, quantity_available,
                is_low_stock, is_out_of_stock, reorder_point
-        FROM silver.inventory
+        FROM {SCHEMA_PREFIX}silver.inventory
         WHERE snapshot_date = current_date
           AND is_low_stock = true
         ORDER BY quantity_available ASC
@@ -359,7 +376,7 @@ async def get_low_stock_items(conn=Depends(get_db)):
 @app.get("/api/v1/pipeline/health", response_model=PipelineHealth, tags=["ops"])
 async def get_pipeline_health(conn=Depends(get_db)):
     """Check data freshness and pipeline status."""
-    row = await conn.fetchrow("""
+    row = await conn.fetchrow(f"""
         SELECT
             max(_processed_ts)                                   AS last_pipeline_run,
             max(order_date_day)                                  AS latest_order_date,
@@ -367,7 +384,7 @@ async def get_pipeline_health(conn=Depends(get_db)):
                 then 1 end)                                      AS total_orders_today,
             extract(epoch from (current_timestamp - max(_processed_ts)))
                 / 3600.0                                         AS data_freshness_hours
-        FROM gold.fact_orders
+        FROM {SCHEMA_PREFIX}gold.fact_orders
     """)
     freshness = row["data_freshness_hours"] or 999
     status = "healthy" if freshness < 6 else ("degraded" if freshness < 24 else "stale")
@@ -381,7 +398,7 @@ async def get_channel_attribution(
     conn=Depends(get_db)
 ):
     """Multi-channel attribution analysis."""
-    rows = await conn.fetch("""
+    rows = await conn.fetch(f"""
         SELECT
             utm_source,
             utm_medium,
@@ -397,7 +414,7 @@ async def get_channel_attribution(
                 / sum(sum(case when is_completed=1
                     then total_amount else 0 end)) over ()
                 ::numeric, 2)                             AS revenue_share_pct
-        FROM gold.fact_orders
+        FROM {SCHEMA_PREFIX}gold.fact_orders
         WHERE order_date_day BETWEEN $1 AND $2
         GROUP BY 1,2,3
         ORDER BY revenue DESC

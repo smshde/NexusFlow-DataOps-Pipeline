@@ -50,6 +50,14 @@ REDSHIFT=$(aws redshift-serverless list-workgroups \
   --query 'workgroups[0].endpoint.address' \
   --output text)
 
+# nexusflow-serving (FastAPI) reads this to fetch the Redshift admin
+# password at startup — never hardcoded, never set as a plain env var.
+REDSHIFT_SECRET_ARN=$(aws secretsmanager describe-secret \
+  --secret-id "redshift!nexusflow-dev-ns-nexusflow_admin" \
+  --region $REGION \
+  --query 'ARN' \
+  --output text)
+
 # Needed by dbt's on-run-start CREATE EXTERNAL SCHEMA hook (Spectrum
 # over Spark's silver/ output) — the role Redshift assumes to read Glue
 # + S3, not an IRSA/OIDC role.
@@ -79,6 +87,7 @@ REDSHIFT_PORT=5439
 REDSHIFT_DB=nexusflow
 REDSHIFT_USER=nexusflow_admin
 REDSHIFT_SPECTRUM_ROLE_ARN=$REDSHIFT_SPECTRUM_ROLE_ARN
+REDSHIFT_SECRET_ARN=$REDSHIFT_SECRET_ARN
 S3_BRONZE_BUCKET=nexusflow-dev-lakehouse
 S3_SILVER_BUCKET=nexusflow-dev-lakehouse
 S3_GOLD_BUCKET=nexusflow-dev-lakehouse

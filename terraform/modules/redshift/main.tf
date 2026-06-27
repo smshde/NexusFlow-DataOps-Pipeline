@@ -52,12 +52,24 @@ resource "aws_security_group" "redshift" {
 resource "aws_iam_role" "redshift" {
   name = "${var.workgroup_name}-role"
 
+  # Trust BOTH principals. The namespace association API records any ARN
+  # (shows applyStatus=in-sync regardless of trust policy), but at Spectrum
+  # query time the credential manager (xen_aws_credentials_mgr) assumes the
+  # role as service principal "redshift.amazonaws.com" — even for Serverless.
+  # With only "redshift-serverless.amazonaws.com" trusted, every external-
+  # schema read fails: "Not authorized to get credentials of role ...".
+  # redshift-serverless.amazonaws.com is kept for the association path itself.
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action    = "sts:AssumeRole"
-      Effect    = "Allow"
-      Principal = { Service = "redshift-serverless.amazonaws.com" }
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = [
+          "redshift.amazonaws.com",
+          "redshift-serverless.amazonaws.com"
+        ]
+      }
     }]
   })
 

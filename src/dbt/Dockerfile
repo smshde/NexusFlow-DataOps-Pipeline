@@ -23,5 +23,12 @@ RUN pip install --no-cache-dir \
 
 COPY dbt_project/ ./dbt_project/
 
+# Bake dbt package deps (dbt_utils) into the image. KubernetesPodOperator
+# launches a fresh pod per task, so a `dbt deps` run in one task's pod is
+# invisible to the next — installing here means every pod already ships
+# dbt_packages/. Without this, gold models fail: "'dbt_utils' is undefined".
+# deps needs no DB connection or profile, just the project dir + packages.yml.
+RUN dbt deps --project-dir ./dbt_project
+
 ENTRYPOINT ["dbt"]
 CMD ["run", "--profiles-dir", "/app/dbt_project", "--project-dir", "/app/dbt_project"]

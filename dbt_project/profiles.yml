@@ -20,7 +20,12 @@ nexusflow:
       schema:   dbt_dev
       threads:  4
       keepalives_idle: 240
-      connect_timeout: 10
+      # redshift_connector applies this as the socket read timeout for the
+      # WHOLE session, not just initial TCP connect — a long-running CTAS
+      # (e.g. silver_orders, the largest table) gets killed mid-read once it
+      # crosses this value: "Runtime Error: The read operation timed out".
+      # 120s gives headroom for Spectrum CTAS scans over growing bronze data.
+      connect_timeout: 120
       ra3_node: true
       search_path: gold,silver,bronze,public
 
@@ -34,7 +39,7 @@ nexusflow:
       schema:   dbt_prod
       threads:  8
       keepalives_idle: 240
-      connect_timeout: 10
+      connect_timeout: 120
       sslmode:  require
       ra3_node: true
 

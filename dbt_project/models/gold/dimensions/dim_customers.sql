@@ -101,11 +101,11 @@ enriched as (
         cs.registration_date,
         cs.registration_year,
         cs.registration_month,
-        datediff('day', cs.registration_date, current_date()) as customer_age_days,
+        datediff('day', cs.registration_date, current_date) as customer_age_days,
         case
-            when datediff('day', cs.registration_date, current_date()) <=  30 then 'new'
-            when datediff('day', cs.registration_date, current_date()) <= 180 then 'recent'
-            when datediff('day', cs.registration_date, current_date()) <= 365 then 'established'
+            when datediff('day', cs.registration_date, current_date) <=  30 then 'new'
+            when datediff('day', cs.registration_date, current_date) <= 180 then 'recent'
+            when datediff('day', cs.registration_date, current_date) <= 365 then 'established'
             else                                                                    'veteran'
         end                                                 as tenure_band,
 
@@ -125,7 +125,7 @@ enriched as (
         cs._record_hash,
 
         -- ── DBT METADATA ──
-        current_timestamp()                                 as _dbt_updated_at
+        current_timestamp                                 as _dbt_updated_at
 
     from customer_snapshots cs
 ),

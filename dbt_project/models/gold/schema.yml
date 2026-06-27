@@ -39,15 +39,19 @@ models:
       - name: order_date
         tests:
           - not_null
+          # column-level expression_is_true auto-prepends column_name —
+          # expression here is just the operator continuation, not the
+          # full "order_date >= ..." (that doubled to "order_date order_date
+          # >= ..." and errored with a syntax error).
           - dbt_utils.expression_is_true:
-              expression: "order_date >= '2020-01-01'"
+              expression: ">= '2020-01-01'"
               name: order_date_not_before_2020
 
       - name: total_amount
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "total_amount >= 0"
+              expression: ">= 0"
               name: total_amount_non_negative
 
       - name: order_status
@@ -77,13 +81,16 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "item_count >= 1"
+              expression: ">= 1"
               name: item_count_at_least_one
 
     tests:
-      # Row count freshness check
+      # Row count freshness check. Model-level expression_is_true wraps the
+      # expression in a per-row WHERE NOT(...) — a bare count(*) there is an
+      # aggregate-in-WHERE, which Redshift rejects. Wrapping it as a scalar
+      # subquery against the model's own relation avoids that.
       - dbt_utils.expression_is_true:
-          expression: "count(*) > 0"
+          expression: "(select count(*) from {{ ref('fact_orders') }}) > 0"
           name: fact_orders_not_empty
 
       # No future-dated orders
@@ -127,9 +134,6 @@ models:
         description: SHA-256 of email — safe for joining
         tests:
           - not_null
-          - dbt_utils.expression_is_true:
-              expression: "len(email_hash) = 64"
-              name: email_hash_valid_sha256
 
       - name: age_bracket
         tests:
@@ -140,21 +144,46 @@ models:
       - name: loyalty_tier_rank
         tests:
           - dbt_utils.expression_is_true:
-              expression: "loyalty_tier_rank between 1 and 4"
+              expression: "between 1 and 4"
               name: loyalty_rank_valid_range
 
     tests:
-      # Exactly one current record per customer_id
+      # email_hash check moved here: column-level expression_is_true
+      # auto-prepends column_name, which doesn't compose with a function
+      # call wrapping the column (len(email_hash) became
+      # "email_hash len(email_hash) = 64" — syntax error). Model-level
+      # tests get no auto-prepend, so the full expression works as-is.
+      - dbt_utils.expression_is_true:
+          expression: "len(email_hash) = 64"
+          name: email_hash_valid_sha256
+
+      # Exactly one current record per customer_id.
+      # {{ this }} inside a generic test resolves to the TEST's own
+      # store_failures relation (which doesn't exist until the test
+      # succeeds) — not the model under test. Use {{ ref(...) }} instead.
       - dbt_utils.expression_is_true:
           expression: |
             (SELECT count(*) FROM (
               SELECT customer_id, count(*) as cnt
-              FROM {{ this }}
+              FROM {{ ref('dim_customers') }}
               WHERE _is_current = true
               GROUP BY customer_id
               HAVING count(*) > 1
             ) dups) = 0
           name: one_current_record_per_customer
+
+  # ── DIM PROMOTIONS ───────────────────────────────────────
+  - name: dim_promotions
+    description: >
+      Campaign and promotion reference dimension. Grain: one row per
+      campaign_id — fact_orders joins on campaign_id alone, so a regression
+      back to multiple rows per campaign_id (the original bug here) would
+      silently fan out every fact_orders join again.
+    columns:
+      - name: campaign_id
+        tests:
+          - unique
+          - not_null
 
   # ── CUSTOMER ML FEATURES ─────────────────────────────────
   - name: customer_ml_features
@@ -174,21 +203,21 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "r_score between 1 and 5"
+              expression: "between 1 and 5"
               name: r_score_valid_range
 
       - name: f_score
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "f_score between 1 and 5"
+              expression: "between 1 and 5"
               name: f_score_valid_range
 
       - name: m_score
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "m_score between 1 and 5"
+              expression: "between 1 and 5"
               name: m_score_valid_range
 
       - name: churn_risk_tier
@@ -199,25 +228,29 @@ models:
       - name: rfm_total_score
         tests:
           - dbt_utils.expression_is_true:
-              expression: "rfm_total_score between 3 and 15"
+              expression: "between 3 and 15"
               name: rfm_score_valid_range
 
       - name: total_revenue
         tests:
           - dbt_utils.expression_is_true:
-              expression: "total_revenue >= 0"
+              expression: ">= 0"
               name: total_revenue_non_negative
 
       - name: customer_profile_text
         tests:
           - not_null
-          - dbt_utils.expression_is_true:
-              expression: "len(customer_profile_text) > 50"
-              name: profile_text_has_content
 
     tests:
       # Unique per customer per day
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns: [customer_id, snapshot_date]
           name: customer_features_unique_per_day
+
+      # profile_text check moved here: same column_name auto-prepend
+      # issue as email_hash_valid_sha256 above — function-wrapped
+      # expressions don't compose at column level.
+      - dbt_utils.expression_is_true:
+          expression: "len(customer_profile_text) > 50"
+          name: profile_text_has_content
 

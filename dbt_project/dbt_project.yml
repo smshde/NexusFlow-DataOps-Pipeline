@@ -33,11 +33,22 @@ models:
       +schema: bronze
       +tags: ["bronze", "raw"]
 
-    # Silver — thin views over Spark's own silver/ Parquet output
-    # (Spectrum external schema silver_lake). Spark already dedups,
-    # types, and masks PII — dbt doesn't re-derive silver from bronze.
+    # Silver — native Redshift tables loaded via CTAS from Spark's silver/
+    # Parquet output (Spectrum external schema silver_lake). Spark still owns
+    # all silver logic (dedup, typing, PII masking); dbt only lands that output
+    # into native Redshift storage with one simple `select *` Spectrum read.
+    #
+    # Why TABLE, not VIEW-over-Spectrum: a late-binding view straight over an
+    # external table works for a single passthrough, but Spectrum imposes
+    # query-shape limits (e.g. "Spectrum nested query error" on aggregation +
+    # outer scalar funcs). The gold layer's joins/aggregations/window funcs
+    # tripped those limits on every model. Landing silver native once (CTAS)
+    # removes the entire class of Spectrum limitation for all downstream gold
+    # models, and gives them sorted/distributed columnar storage. This is the
+    # standard medallion-on-Redshift pattern: Spectrum is the doorway, native
+    # tables are the workbench.
     silver:
-      +materialized: view
+      +materialized: table
       +schema: silver
       +tags: ["silver", "cleaned"]
 

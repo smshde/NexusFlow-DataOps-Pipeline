@@ -2,20 +2,32 @@
 -- NexusFlow — dbt Macros Library
 -- ============================================================
 
--- ── MODE AGGREGATION ─────────────────────────────────────
--- Returns the most frequent non-null value in a column (Redshift)
-{% macro mode_agg(column_name) %}
-    (
-        SELECT {{ column_name }}
-        FROM (
-            SELECT {{ column_name }}, count(*) AS n
-            FROM {{ this }}
-            WHERE {{ column_name }} IS NOT NULL
-            GROUP BY 1
-            ORDER BY n DESC
-            LIMIT 1
-        ) _mode
+-- ── MODE LOOKUP CTE ───────────────────────────────────────
+-- Generates a (group_col, mode_col) CTE: most frequent non-null
+-- mode_col value per group_col, via rank-by-frequency + take rank 1.
+-- Redshift has no MODE()/MODE() WITHIN GROUP aggregate (Postgres/
+-- Snowflake-only) — this is the portable equivalent. Join the result
+-- on group_col to pull the mode value at any outer aggregation level.
+-- Original implementation queried `FROM {{ this }}` (the model's own,
+-- not-yet-built output table) via an uncorrelated subquery — failed
+-- with "relation does not exist" on first run, and even if the table
+-- existed, was never correlated to the surrounding GROUP BY key, so
+-- it would've returned one global mode for every row, not one per group.
+{% macro mode_lookup_cte(relation, group_col, mode_col) %}
+    select {{ group_col }}, {{ mode_col }}
+    from (
+        select
+            {{ group_col }},
+            {{ mode_col }},
+            row_number() over (
+                partition by {{ group_col }}
+                order by count(*) desc
+            ) as rn
+        from {{ relation }}
+        where {{ mode_col }} is not null
+        group by {{ group_col }}, {{ mode_col }}
     )
+    where rn = 1
 {% endmacro %}
 
 
