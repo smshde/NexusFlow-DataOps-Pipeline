@@ -11,45 +11,53 @@ PEP8-compliant, pytest-based tests covering:
 Run: pytest src/datagen/test_generator.py -v --cov=src/datagen --cov-report=html
 """
 
-import json
-import pytest
 import hashlib
+import json
 import uuid
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
 from dataclasses import asdict
+from datetime import datetime, timedelta
+
+import pytest
 
 # ── FIXTURES ──────────────────────────────────────────────
+
 
 @pytest.fixture(scope="module")
 def generator():
     """Shared generator instance for all tests."""
-    import sys, os
+    import os
+    import sys
+
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../datagen"))
     from ecommerce_generator import EcommerceDataGenerator
+
     return EcommerceDataGenerator(num_customers=100, seed=42)
 
 
 @pytest.fixture
 def sample_customer(generator):
     from ecommerce_generator import Customer
+
     return Customer.generate()
 
 
 @pytest.fixture
 def sample_order(generator, sample_customer):
     from ecommerce_generator import Order
+
     return Order.generate(sample_customer.customer_id)
 
 
 @pytest.fixture
 def sample_clickstream_event(generator):
     from ecommerce_generator import ClickstreamEvent
+
     session_id = str(uuid.uuid4())
     return ClickstreamEvent.generate(session_id)
 
 
 # ── CUSTOMER TESTS ────────────────────────────────────────
+
 
 class TestCustomerGeneration:
     """Tests for Customer data model."""
@@ -66,9 +74,7 @@ class TestCustomerGeneration:
 
     def test_email_hash_matches_email(self, sample_customer):
         """Hash must match SHA-256 of lowercase email."""
-        expected = hashlib.sha256(
-            sample_customer.email.lower().encode()
-        ).hexdigest()
+        expected = hashlib.sha256(sample_customer.email.lower().encode()).hexdigest()
         assert sample_customer.email_hash == expected
 
     def test_phone_hash_is_sha256(self, sample_customer):
@@ -92,6 +98,7 @@ class TestCustomerGeneration:
     def test_customer_reproducible_with_seed(self):
         """Same seed → same first customer."""
         from ecommerce_generator import EcommerceDataGenerator
+
         gen1 = EcommerceDataGenerator(num_customers=5, seed=999)
         gen2 = EcommerceDataGenerator(num_customers=5, seed=999)
         c1 = asdict(gen1.customers[0])
@@ -101,6 +108,7 @@ class TestCustomerGeneration:
 
 
 # ── ORDER TESTS ───────────────────────────────────────────
+
 
 class TestOrderGeneration:
     """Tests for Order data model."""
@@ -125,24 +133,32 @@ class TestOrderGeneration:
     def test_order_total_consistency(self, sample_order):
         """Total must equal subtotal + shipping + tax."""
         expected = round(
-            sample_order.subtotal +
-            sample_order.shipping_fee +
-            sample_order.tax_amount,
-            2
+            sample_order.subtotal + sample_order.shipping_fee + sample_order.tax_amount,
+            2,
         )
         assert abs(sample_order.total_amount - expected) < 0.01
 
     def test_order_status_valid(self, sample_order):
         valid_statuses = {
-            "pending", "confirmed", "processing",
-            "shipped", "delivered", "cancelled", "refunded"
+            "pending",
+            "confirmed",
+            "processing",
+            "shipped",
+            "delivered",
+            "cancelled",
+            "refunded",
         }
         assert sample_order.order_status in valid_statuses
 
     def test_order_payment_method_valid(self, sample_order):
         valid_methods = {
-            "credit_card", "debit_card", "paypal",
-            "apple_pay", "google_pay", "buy_now_pay_later", "gift_card"
+            "credit_card",
+            "debit_card",
+            "paypal",
+            "apple_pay",
+            "google_pay",
+            "buy_now_pay_later",
+            "gift_card",
         }
         assert sample_order.payment_method in valid_methods
 
@@ -166,6 +182,7 @@ class TestOrderGeneration:
 
 # ── CLICKSTREAM TESTS ─────────────────────────────────────
 
+
 class TestClickstreamGeneration:
     """Tests for ClickstreamEvent data model."""
 
@@ -174,8 +191,15 @@ class TestClickstreamGeneration:
 
     def test_event_type_valid(self, sample_clickstream_event):
         valid_types = {
-            "page_view", "product_view", "add_to_cart", "remove_from_cart",
-            "checkout_start", "search", "wishlist_add", "review_view", "click"
+            "page_view",
+            "product_view",
+            "add_to_cart",
+            "remove_from_cart",
+            "checkout_start",
+            "search",
+            "wishlist_add",
+            "review_view",
+            "click",
         }
         assert sample_clickstream_event.event_type in valid_types
 
@@ -194,6 +218,7 @@ class TestClickstreamGeneration:
 
 # ── PII MASKING TESTS ─────────────────────────────────────
 
+
 class TestPIIMasking:
     """Verify PII is properly masked or excluded."""
 
@@ -211,7 +236,12 @@ class TestPIIMasking:
     def test_age_bracket_not_exact_dob(self, sample_customer):
         """Only bucketed age, not exact birth date in final output."""
         assert sample_customer.age_bracket in {
-            "18-24", "25-34", "35-44", "45-54", "55-64", "65+"
+            "18-24",
+            "25-34",
+            "35-44",
+            "45-54",
+            "55-64",
+            "65+",
         }
 
     def test_clickstream_no_raw_ip(self, sample_clickstream_event):
@@ -221,12 +251,15 @@ class TestPIIMasking:
 
 # ── DATA QUALITY TESTS ────────────────────────────────────
 
+
 class TestDataQuality:
     """Comprehensive data quality checks."""
 
     def test_no_negative_prices(self, generator):
         for order in generator.generate_orders_batch(num_orders=200):
-            assert order["total_amount"] >= 0, f"Negative total in order {order['order_id']}"
+            assert (
+                order["total_amount"] >= 0
+            ), f"Negative total in order {order['order_id']}"
             for item in order["items"]:
                 assert item["unit_price"] >= 0
                 assert item["quantity"] >= 1
@@ -248,17 +281,23 @@ class TestDataQuality:
         path = str(tmp_path / "inventory.csv")
         generator.generate_inventory_csv(path)
         import csv
+
         with open(path) as f:
             reader = csv.DictReader(f)
             headers = reader.fieldnames
         required = {
-            "snapshot_ts", "warehouse_id", "product_sku",
-            "quantity_on_hand", "quantity_reserved", "quantity_available"
+            "snapshot_ts",
+            "warehouse_id",
+            "product_sku",
+            "quantity_on_hand",
+            "quantity_reserved",
+            "quantity_available",
         }
         assert required.issubset(set(headers))
 
     def test_reviews_xml_is_valid(self, generator):
         import xml.etree.ElementTree as ET
+
         xml_str = generator.generate_reviews_xml(num_reviews=100)
         # Should parse without error
         root = ET.fromstring(xml_str)
@@ -268,6 +307,7 @@ class TestDataQuality:
 
     def test_reviews_xml_has_required_fields(self, generator):
         import xml.etree.ElementTree as ET
+
         xml_str = generator.generate_reviews_xml(num_reviews=10)
         root = ET.fromstring(xml_str)
         for review in root.findall("review"):
@@ -280,16 +320,20 @@ class TestDataQuality:
 
 # ── API TESTS ─────────────────────────────────────────────
 
+
 class TestAnalyticsAPI:
     """Tests for FastAPI analytics serving layer."""
 
     @pytest.fixture
     def client(self):
         """FastAPI test client with mocked DB."""
-        import sys, os
+        import os
+        import sys
+
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../serving"))
         from fastapi_main import app
         from httpx import AsyncClient
+
         return AsyncClient(app=app, base_url="http://test")
 
     @pytest.mark.asyncio
@@ -310,14 +354,23 @@ class TestAnalyticsAPI:
 
 # ── SCHEMA VALIDATION TESTS ───────────────────────────────
 
+
 class TestSchemaValidation:
     """Validate generated data against expected schemas."""
 
     def test_order_schema_fields_complete(self, sample_order):
         required_fields = {
-            "order_id", "customer_id", "order_status", "order_date",
-            "items", "total_amount", "payment_method", "shipping_method",
-            "utm_source", "_ingestion_ts", "_source"
+            "order_id",
+            "customer_id",
+            "order_status",
+            "order_date",
+            "items",
+            "total_amount",
+            "payment_method",
+            "shipping_method",
+            "utm_source",
+            "_ingestion_ts",
+            "_source",
         }
         d = asdict(sample_order)
         missing = required_fields - set(d.keys())
@@ -325,9 +378,16 @@ class TestSchemaValidation:
 
     def test_clickstream_schema_fields_complete(self, sample_clickstream_event):
         required_fields = {
-            "event_id", "session_id", "event_type", "event_ts",
-            "page_url", "device_type", "browser", "ip_hash",
-            "_ingestion_ts", "_partition_key"
+            "event_id",
+            "session_id",
+            "event_type",
+            "event_ts",
+            "page_url",
+            "device_type",
+            "browser",
+            "ip_hash",
+            "_ingestion_ts",
+            "_partition_key",
         }
         d = asdict(sample_clickstream_event)
         missing = required_fields - set(d.keys())

@@ -159,9 +159,9 @@ module "eks" {
     # instance type.
     general = {
       instance_types = ["t3.medium"]
-      min_size     = 1
-      max_size     = 6 # ⚠️ increase for prod.
-      desired_size = 3
+      min_size       = 1
+      max_size       = 6 # ⚠️ increase for prod.
+      desired_size   = 3
     }
   }
   # Removed "spark" node group (r6i.xlarge/2xlarge, taint workload=spark)
@@ -188,8 +188,8 @@ resource "kubernetes_storage_class_v1" "gp3" {
     }
   }
   storage_provisioner = "ebs.csi.aws.com"
-  reclaim_policy       = "Delete"
-  volume_binding_mode   = "WaitForFirstConsumer"
+  reclaim_policy      = "Delete"
+  volume_binding_mode = "WaitForFirstConsumer"
   parameters = {
     type = "gp3"
   }
@@ -237,7 +237,7 @@ module "ecr" {
 
 # ══════════════════════════════════════════════════════════
 # MODULE 4 — S3
-# Creates: bronze, silver, gold, artifacts, logs, athena buckets
+# Creates: bronze, silver, gold, artifacts, logs buckets
 # Depends on: nothing (standalone)
 # ══════════════════════════════════════════════════════════
 module "s3" {
@@ -266,11 +266,6 @@ module "s3" {
       lifecycle_enabled = true
       transition_days   = 30 # logs move to cheaper storage faster
     }
-    athena_results = {
-      name              = "nexusflow-dev-athena-results"
-      versioning        = false
-      lifecycle_enabled = false
-    }
   }
 
   tags = local.tags
@@ -285,7 +280,7 @@ module "msk" {
   source = "../../modules/msk"
 
   cluster_name  = "${local.name}-kafka" # nexusflow-dev-kafka
-  kafka_version = "3.9.x"                # 3.6.0 being phased out by AWS
+  kafka_version = "3.9.x"               # 3.6.0 being phased out by AWS
   instance_type = "kafka.t3.small"      # budget friendly option for dev
   # ⚠️ scale up to "kafka.m5.large" for prod
   broker_count = 2 # minimum for dev

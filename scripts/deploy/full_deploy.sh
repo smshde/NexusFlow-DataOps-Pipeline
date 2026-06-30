@@ -223,10 +223,10 @@ if run_step 8.55; then
 # dbt_project.yml use CREATE SCHEMA IF NOT EXISTS) and the on-run-start
 # CREATE EXTERNAL SCHEMA hook for Spectrum. Idempotent — safe to re-run.
 info "Step 8.55: Bootstrapping Redshift permissions for dbt..."
-# Redshift Serverless is publicly_accessible=false (VPC-only, see
-# terraform/modules/redshift/main.tf) — this laptop/CI runner is outside
+# Redshift Serverless is publicly_accessible=false (VPC-only, check
+# terraform/modules/redshift/main.tf) — this local machine/CI runner is outside
 # the VPC and can't reach port 5439 directly (was hanging on TCP connect
-# until redshift_connector's 60s timeout). Run the bootstrap inside the
+# until redshift_connector's 60s timeout). Running the bootstrap inside the
 # cluster instead, using the already-pushed dbt image (has redshift_connector
 # via the dbt-redshift adapter) on a throwaway pod in the same VPC as Redshift.
 REDSHIFT_ADMIN_PW=$(aws secretsmanager get-secret-value \
@@ -530,6 +530,8 @@ kubectl create configmap airflow-dynamic-config \
   --from-literal=AIRFLOW_VAR_NEXUSFLOW_GOLD_BUCKET="$S3_GOLD_BUCKET" \
   --from-literal=AIRFLOW_VAR_NEXUSFLOW_ENV="dev" \
   --from-literal=AIRFLOW_VAR_NEXUSFLOW_DBT_IMAGE="$ECR_REGISTRY/nexusflow-dbt:latest" \
+  --from-literal=REDSHIFT_HOST="$REDSHIFT_HOST" \
+  --from-literal=REDSHIFT_SECRET_ARN="$REDSHIFT_SECRET_ARN" \
   --from-literal=AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER="s3://$S3_LOGS_BUCKET/airflow-logs"
 pass "Airflow dynamic ConfigMap created"
 fi
@@ -560,8 +562,8 @@ if run_step 10.5; then
 # ── STEP 10.5: CREATE SLACK CONNECTION ───────────────────
 # DAG's SlackWebhookOperator tasks (notify_success, notify_failure,
 # bronze_incomplete) use conn_id "slack_webhook_nexusflow" — this was
-# never created, so those tasks throw "connection not found" whenever
-# reached. Create it here if a webhook URL was provided.
+# not created, so those tasks throw "connection not found" whenever reached.
+# Created connection here for a provided webhook URL in .env.
 if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
   info "Step 10.5: Creating Airflow Slack connection..."
   kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- \

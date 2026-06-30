@@ -3,7 +3,7 @@
 # File: terraform/modules/s3/main.tf
 #
 # Creates: All S3 buckets for the lakehouse
-#          bronze / silver / gold / artifacts / logs / athena
+#          bronze / silver / gold / artifacts / logs
 # ============================================================
 
 # ── S3 BUCKETS ────────────────────────────────────────────

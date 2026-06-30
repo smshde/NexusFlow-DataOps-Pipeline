@@ -45,10 +45,12 @@ nexusflow:
 
     ci:
       type: redshift
-      host:     localhost
-      port:     5439
-      dbname:   nexusflow_test
-      user:     test_user
-      password: test_password
-      schema:   dbt_ci
-      threads:  2
+      method: iam
+      region: ca-central-1
+      host: "{{ env_var('REDSHIFT_HOST', 'localhost') }}"
+      port: 5439
+      dbname: nexusflow
+      user: nexusflow_admin
+      schema: dbt_ci
+      threads: 2
+      connect_timeout: 10

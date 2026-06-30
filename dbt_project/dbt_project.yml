@@ -22,7 +22,7 @@ clean-targets: ["target", "dbt_packages"]
 # role can't grant privileges to itself). With that grant in place this
 # hook is self-healing: idempotent, safe on every run/fresh deploy.
 on-run-start:
-  - "CREATE EXTERNAL SCHEMA IF NOT EXISTS silver_lake FROM DATA CATALOG DATABASE 'nexusflow_dev_silver' IAM_ROLE '{{ env_var(\"REDSHIFT_SPECTRUM_ROLE_ARN\") }}' REGION 'ca-central-1';"
+  - "CREATE EXTERNAL SCHEMA IF NOT EXISTS silver_lake FROM DATA CATALOG DATABASE 'nexusflow_dev_silver' IAM_ROLE '{{ env_var(\"REDSHIFT_SPECTRUM_ROLE_ARN\", \"arn:aws:iam::000000000000:role/placeholder\") }}' REGION 'ca-central-1';"
 
 # ── MODEL CONFIGURATIONS ──────────────────────────────────
 models:
@@ -58,10 +58,9 @@ models:
       +schema: gold
       +tags: ["gold", "business"]
       # Removed post-hook "GRANT SELECT ... TO GROUP analysts" — that
-      # Redshift group is never provisioned anywhere in this project
-      # (no terraform resource, no setup script), so every gold model
-      # run would fail with 'group "analysts" does not exist'. Add back
-      # if/when a real analyst-access group is provisioned.
+      # Redshift group is never provisioned (no terraform resource, no setup script),
+      # so every gold model run would fail with 'group "analysts" does not exist'. 
+      # Add back if/when a real analyst-access group is provisioned.
 
       facts:
         +materialized: incremental

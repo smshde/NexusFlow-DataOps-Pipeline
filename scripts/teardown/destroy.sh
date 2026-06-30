@@ -2,7 +2,7 @@
 # ============================================================
 # NexusFlow — Teardown Script
 # Usage: bash scripts/teardown/destroy.sh
-# Run BEFORE terraform destroy
+# Must run BEFORE terraform destroy
 # ============================================================
 set -euo pipefail
 
@@ -15,7 +15,7 @@ read -rp "Type 'yes' to confirm: " CONFIRM
 
 # ── EMPTY S3 BUCKETS ─────────────────────────────────────
 echo -e "${CYAN}Emptying S3 buckets...${NC}"
-for SUFFIX in lakehouse artifacts logs athena-results; do
+for SUFFIX in lakehouse artifacts logs; do
   BUCKET="nexusflow-dev-$SUFFIX"
   if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
     python3 - << EOF
