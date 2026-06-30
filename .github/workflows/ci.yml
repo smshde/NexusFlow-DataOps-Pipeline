@@ -1,0 +1,88 @@
+name: NexusFlow CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install lint deps
+        run: pip install black isort flake8 sqlfluff
+      - name: Black
+        run: black --check src/ airflow/dags/
+      - name: isort
+        run: isort --check src/ airflow/dags/
+      - name: Flake8
+        # E203/W503 conflict with black; E501 is owned by black (line-length 88),
+        # so flake8 only guards real defects (unused imports, undefined names, etc.).
+        run: flake8 src/ airflow/dags/ --max-line-length=100 --extend-ignore=E203,W503,E501
+      - name: SQLFluff (dbt models)
+        run: sqlfluff lint dbt_project/models/ --dialect redshift --templater dbt
+        continue-on-error: true
+
+  dbt-parse:
+    name: dbt Parse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install dbt
+        run: pip install "dbt-redshift==1.8.0"
+      - name: dbt deps
+        run: dbt deps --project-dir dbt_project
+      - name: dbt parse (offline)
+        run: dbt parse --project-dir dbt_project --profiles-dir dbt_project --target ci
+
+  terraform-validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.0
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive terraform/
+      - name: Terraform init (no backend)
+        run: terraform init -backend=false
+        working-directory: terraform/environments/dev
+      - name: Terraform validate
+        run: terraform validate
+        working-directory: terraform/environments/dev
+
+  python-tests:
+    name: Python Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install deps
+        run: |
+          pip install -r src/datagen/requirements.txt
+          pip install -r src/ingestion/requirements.txt
+          pip install "pyspark==3.5.1" pytest
+      - name: Run unit tests
+        # Self-contained unit tests only (Avro encode/decode + Spark reviews transform). 
+        # ubuntu-latest ships a single Python and a JDK, so the pyspark driver/worker versions match.
+        run: |
+          pytest -v \
+            src/datagen/test_avro_clickstream.py \
+            src/ingestion/test_consumer_avro.py \
+            src/processing/test_bronze_to_silver_reviews.py

@@ -1,0 +1,9 @@
+# Formatting/lint config for the CI lint job (.github/workflows/ci.yml).
+# isort uses the black profile so `isort --check` and `black --check` agree.
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
