@@ -41,6 +41,12 @@ models:
               values: [page_view,product_view,add_to_cart,remove_from_cart,
                        checkout_start,search,wishlist_add,review_view,click]
 
+  - name: silver_reviews
+    description: Cleaned, typed product reviews
+    columns:
+      - name: review_id
+        tests: [unique, not_null]
+
 sources:
   # Redshift Spectrum external schema over Spark's own silver output
   # (s3://lakehouse/silver/, crawled into Glue nexusflow_dev_silver).
@@ -60,3 +66,4 @@ sources:
       - name: customers
       - name: clickstream
       - name: inventory
+      - name: reviews

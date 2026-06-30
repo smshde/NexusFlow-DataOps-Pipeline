@@ -254,3 +254,17 @@ models:
           expression: "len(customer_profile_text) > 50"
           name: profile_text_has_content
 
+  # ── FACT REVIEWS ─────────────────────────────────────────
+  - name: fact_reviews
+    description: "One row per product review. Grain: review_id."
+    columns:
+      - name: review_sk
+        tests: [unique, not_null]
+      - name: review_id
+        tests: [unique, not_null]
+      - name: rating
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "between 1 and 5"
+              name: review_rating_valid_range
+
