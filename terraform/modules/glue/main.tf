@@ -106,6 +106,25 @@ resource "aws_glue_crawler" "layers" {
   tags = var.tags
 }
 
+# ── GLUE SCHEMA REGISTRY ──────────────────────────────────
+# Avro schema registry for the clickstream Kafka topic.
+# Producer (Task 11) and consumer (Task 12) register/read
+# against this — schema_definition must match
+# CLICKSTREAM_AVRO_SCHEMA in src/datagen/kafka_producer.py.
+resource "aws_glue_registry" "events" {
+  registry_name = "${var.project_name}-${var.environment}"
+  tags          = var.tags
+}
+
+resource "aws_glue_schema" "clickstream_value" {
+  schema_name       = "clickstream-value"
+  registry_arn      = aws_glue_registry.events.arn
+  data_format       = "AVRO"
+  compatibility     = "BACKWARD"
+  schema_definition = file("${path.module}/schemas/clickstream.avsc")
+  tags              = var.tags
+}
+
 # ══════════════════════════════════════════════════════════
 # OUTPUTS
 # ══════════════════════════════════════════════════════════

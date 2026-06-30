@@ -12,26 +12,26 @@ Topics:
 """
 
 import json
-import time
-import signal
 import logging
 import os
-import sys
 import random
+import signal
+import sys
+import time
 import uuid
-from confluent_kafka.admin import AdminClient, NewTopic
-from aws_msk_iam_sasl_signer import MSKAuthTokenProvider
-from datetime import datetime, timezone
 from dataclasses import asdict
+from datetime import datetime, timezone
 from typing import Optional
-from confluent_kafka import Producer, KafkaError
-from confluent_kafka.schema_registry import SchemaRegistryClient
-from confluent_kafka.schema_registry.avro import AvroSerializer
-from confluent_kafka.serialization import StringSerializer, SerializationContext, MessageField
 
-from ecommerce_generator import (
-    EcommerceDataGenerator, Order, ClickstreamEvent, Customer
-)
+import boto3
+from aws_msk_iam_sasl_signer import MSKAuthTokenProvider
+from aws_schema_registry import SchemaRegistryClient
+from aws_schema_registry.adapter.kafka import KafkaSerializer
+from aws_schema_registry.avro import AvroSchema
+from confluent_kafka import Producer
+from confluent_kafka.admin import AdminClient, NewTopic
+from confluent_kafka.serialization import StringSerializer
+from ecommerce_generator import ClickstreamEvent, EcommerceDataGenerator, Order
 
 # ── LOGGING ───────────────────────────────────────────────
 logging.basicConfig(
@@ -40,41 +40,44 @@ logging.basicConfig(
     handlers=[
         logging.StreamHandler(sys.stdout),
         logging.FileHandler("/tmp/kafka_producer.log"),
-    ]
+    ],
 )
 logger = logging.getLogger("nexusflow.producer")
 
 # ── CLICKSTREAM AVRO SCHEMA ───────────────────────────────
-CLICKSTREAM_AVRO_SCHEMA = json.dumps({
-    "type": "record",
-    "name": "ClickstreamEvent",
-    "namespace": "io.nexusflow.events",
-    "fields": [
-        {"name": "event_id",          "type": "string"},
-        {"name": "session_id",         "type": "string"},
-        {"name": "customer_id",        "type": ["null", "string"], "default": None},
-        {"name": "event_type",         "type": "string"},
-        {"name": "event_ts",           "type": "string"},
-        {"name": "page_url",           "type": "string"},
-        {"name": "referrer_url",       "type": ["null", "string"], "default": None},
-        {"name": "product_sku",        "type": ["null", "string"], "default": None},
-        {"name": "product_category",   "type": ["null", "string"], "default": None},
-        {"name": "search_query",       "type": ["null", "string"], "default": None},
-        {"name": "device_type",        "type": "string"},
-        {"name": "browser",            "type": "string"},
-        {"name": "os",                 "type": "string"},
-        {"name": "ip_hash",            "type": "string"},
-        {"name": "user_agent",         "type": "string"},
-        {"name": "viewport_width",     "type": "int"},
-        {"name": "viewport_height",    "type": "int"},
-        {"name": "scroll_depth_pct",   "type": ["null", "int"], "default": None},
-        {"name": "time_on_page_sec",   "type": ["null", "int"], "default": None},
-        {"name": "utm_source",         "type": ["null", "string"], "default": None},
-        {"name": "utm_medium",         "type": ["null", "string"], "default": None},
-        {"name": "_ingestion_ts",      "type": "string"},
-        {"name": "_partition_key",     "type": "string"},
-    ]
-})
+CLICKSTREAM_AVRO_SCHEMA = json.dumps(
+    {
+        "type": "record",
+        "name": "ClickstreamEvent",
+        "namespace": "io.nexusflow.events",
+        "fields": [
+            {"name": "event_id", "type": "string"},
+            {"name": "session_id", "type": "string"},
+            {"name": "customer_id", "type": ["null", "string"], "default": None},
+            {"name": "event_type", "type": "string"},
+            {"name": "event_ts", "type": "string"},
+            {"name": "page_url", "type": "string"},
+            {"name": "referrer_url", "type": ["null", "string"], "default": None},
+            {"name": "product_sku", "type": ["null", "string"], "default": None},
+            {"name": "product_category", "type": ["null", "string"], "default": None},
+            {"name": "search_query", "type": ["null", "string"], "default": None},
+            {"name": "device_type", "type": "string"},
+            {"name": "browser", "type": "string"},
+            {"name": "os", "type": "string"},
+            {"name": "ip_hash", "type": "string"},
+            {"name": "user_agent", "type": "string"},
+            {"name": "viewport_width", "type": "int"},
+            {"name": "viewport_height", "type": "int"},
+            {"name": "scroll_depth_pct", "type": ["null", "int"], "default": None},
+            {"name": "time_on_page_sec", "type": ["null", "int"], "default": None},
+            {"name": "utm_source", "type": ["null", "string"], "default": None},
+            {"name": "utm_medium", "type": ["null", "string"], "default": None},
+            {"name": "_ingestion_ts", "type": "string"},
+            {"name": "_partition_key", "type": "string"},
+        ],
+    }
+)
+
 
 def _get_msk_token(config):
     """Generate MSK IAM OAuth token for librdkafka."""
@@ -82,24 +85,25 @@ def _get_msk_token(config):
     token, expiry_ms = MSKAuthTokenProvider.generate_auth_token(region)
     return token, expiry_ms / 1000  # convert ms to seconds
 
+
 def create_topics(bootstrap_servers: str) -> None:
     """Create Kafka topics if they do not exist."""
     admin_conf = {
-        "bootstrap.servers":           bootstrap_servers,
-        "security.protocol":           "SASL_SSL",
-        "sasl.mechanisms":             "OAUTHBEARER",
-        "oauth_cb":                    _get_msk_token,
-        "socket.timeout.ms":           30000,
-        "request.timeout.ms":          30000,
+        "bootstrap.servers": bootstrap_servers,
+        "security.protocol": "SASL_SSL",
+        "sasl.mechanisms": "OAUTHBEARER",
+        "oauth_cb": _get_msk_token,
+        "socket.timeout.ms": 30000,
+        "request.timeout.ms": 30000,
         "metadata.request.timeout.ms": 30000,
     }
     admin = AdminClient(admin_conf)
     topics = [
-        NewTopic("orders",           num_partitions=6,  replication_factor=2),
-        NewTopic("clickstream",      num_partitions=12, replication_factor=2),
-        NewTopic("inventory-events", num_partitions=4,  replication_factor=2),
-        NewTopic("product-reviews",  num_partitions=4,  replication_factor=2),
-        NewTopic("user-sessions",    num_partitions=8,  replication_factor=2),
+        NewTopic("orders", num_partitions=6, replication_factor=2),
+        NewTopic("clickstream", num_partitions=12, replication_factor=2),
+        NewTopic("inventory-events", num_partitions=4, replication_factor=2),
+        NewTopic("product-reviews", num_partitions=4, replication_factor=2),
+        NewTopic("user-sessions", num_partitions=8, replication_factor=2),
     ]
     fs = admin.create_topics(topics, request_timeout=30)
     for topic, f in fs.items():
@@ -112,50 +116,54 @@ def create_topics(bootstrap_servers: str) -> None:
             else:
                 print(f"⚠️  Topic error {topic}: {e}")
 
+
 class NexusFlowProducer:
     """Kafka producer for NexusFlow streaming events."""
 
-    def __init__(self,
-                 bootstrap_servers: str,
-                 schema_registry_url: Optional[str] = None,
-                 num_customers: int = 10_000):
+    def __init__(
+        self,
+        bootstrap_servers: str,
+        schema_registry_url: Optional[str] = None,
+        num_customers: int = 10_000,
+    ):
 
         self.bootstrap_servers = bootstrap_servers
         self._running = True
-        self._stats = {t: {"produced": 0, "errors": 0}
-                       for t in ["orders", "clickstream", "inventory-events", "product-reviews"]}
+        self._stats = {
+            t: {"produced": 0, "errors": 0}
+            for t in ["orders", "clickstream", "inventory-events", "product-reviews"]
+        }
 
         # Producer config
         producer_conf = {
-            "bootstrap.servers":            bootstrap_servers,
-            "linger.ms":                    5,                  # Small delay to allow batching
-            "batch.size":                   65536,          # 64KB batch size for better throughput
-            "compression.type":             "lz4",          # Fast compression for lower bandwidth usage
-            "acks":                         "all",          # Wait for all replicas to acknowledge
-            "retries":                      5,              # Retry up to 5 times on failure
-            "retry.backoff.ms":             200,            # Idempotent producer to avoid duplicates on retries
-            "enable.idempotence":           True,           # Ensure no duplicates on retries
-            "statistics.interval.ms":       60000,          # Log stats every 60s
-            "client.id":                    "nexusflow-producer",
+            "bootstrap.servers": bootstrap_servers,
+            "linger.ms": 5,  # Small delay to allow batching
+            "batch.size": 65536,  # 64KB batch size for better throughput
+            "compression.type": "lz4",  # Fast compression for lower bandwidth usage
+            "acks": "all",  # Wait for all replicas to acknowledge
+            "retries": 5,  # Retry up to 5 times on failure
+            "retry.backoff.ms": 200,  # Idempotent producer to avoid duplicates on retries
+            "enable.idempotence": True,  # Ensure no duplicates on retries
+            "statistics.interval.ms": 60000,  # Log stats every 60s
+            "client.id": "nexusflow-producer",
             # IAM auth for MSK
-            "security.protocol":          "SASL_SSL",
-            "sasl.mechanisms":            "OAUTHBEARER",
-            "oauth_cb":                   _get_msk_token,
+            "security.protocol": "SASL_SSL",
+            "sasl.mechanisms": "OAUTHBEARER",
+            "oauth_cb": _get_msk_token,
         }
 
         self.producer = Producer(producer_conf)
         self.string_serializer = StringSerializer("utf_8")
 
-        # Avro serializer for clickstream
-        if schema_registry_url:
-            sr_conf = {"url": schema_registry_url} 
-            schema_registry_client = SchemaRegistryClient(sr_conf)
-            self.avro_serializer = AvroSerializer(
-                schema_registry_client,
-                CLICKSTREAM_AVRO_SCHEMA,
-            )
-        else:
-            self.avro_serializer = None
+        # Glue Schema Registry Avro serializer for clickstream (IAM-auth, no URL).
+        # The schema_registry_url __init__ param is retained for call-site
+        # compatibility but unused — Glue is reached via boto3/IAM.
+        glue = boto3.client("glue", region_name=os.getenv("AWS_REGION", "ca-central-1"))
+        registry = SchemaRegistryClient(
+            glue, registry_name=f"nexusflow-{os.getenv('NEXUSFLOW_ENV', 'dev')}"
+        )
+        self.avro_schema = AvroSchema(CLICKSTREAM_AVRO_SCHEMA)
+        self.kafka_serializer = KafkaSerializer(registry)
 
         # Data generator
         self.gen = EcommerceDataGenerator(num_customers=num_customers)
@@ -171,12 +179,14 @@ class NexusFlowProducer:
 
     def _delivery_report(self, topic: str):
         """Return a delivery callback bound to topic stats."""
+
         def callback(err, msg):
             if err:
                 logger.error(f"[{topic}] Delivery failed: {err}")
                 self._stats[topic]["errors"] += 1
             else:
                 self._stats[topic]["produced"] += 1
+
         return callback
 
     def produce_order(self, customer_id: str) -> None:
@@ -189,27 +199,23 @@ class NexusFlowProducer:
             key=self.string_serializer(order.customer_id),
             value=payload,
             headers={
-                "source":      b"order-service",
-                "version":     b"2.0",
+                "source": b"order-service",
+                "version": b"2.0",
                 "content-type": b"application/json",
             },
             on_delivery=self._delivery_report("orders"),
         )
 
-    def produce_clickstream_event(self,
-                                   session_id: str,
-                                   customer_id: Optional[str] = None) -> None:
+    def produce_clickstream_event(
+        self, session_id: str, customer_id: Optional[str] = None
+    ) -> None:
         """Produce a clickstream event (Avro if schema registry available)."""
         event = ClickstreamEvent.generate(session_id, customer_id)
         event_dict = asdict(event)
 
-        if self.avro_serializer:
-            value = self.avro_serializer(
-                event_dict,
-                SerializationContext("clickstream", MessageField.VALUE)
-            )
-        else:
-            value = json.dumps(event_dict).encode("utf-8")
+        value = self.kafka_serializer.serialize(
+            "clickstream", (event_dict, self.avro_schema)
+        )
 
         self.producer.produce(
             topic="clickstream",
@@ -221,19 +227,20 @@ class NexusFlowProducer:
     def produce_inventory_event(self) -> None:
         """Produce an inventory update event."""
         from ecommerce_generator import PRODUCT_CATALOG, WAREHOUSES
+
         product = random.choice(PRODUCT_CATALOG)
         warehouse = random.choice(WAREHOUSES)
 
         event = {
-            "event_id":        str(uuid.uuid4()),
-            "event_type":      random.choice(["restock", "sale", "adjustment", "return"]),
-            "event_ts":        datetime.now(timezone.utc).isoformat(),
-            "warehouse_id":    warehouse["id"],
-            "product_sku":     product["sku"],
+            "event_id": str(uuid.uuid4()),
+            "event_type": random.choice(["restock", "sale", "adjustment", "return"]),
+            "event_ts": datetime.now(timezone.utc).isoformat(),
+            "warehouse_id": warehouse["id"],
+            "product_sku": product["sku"],
             "quantity_change": random.randint(-50, 200),
-            "new_quantity":    random.randint(0, 5000),
-            "triggered_by":    random.choice(["order", "manual", "supplier", "return"]),
-            "_ingestion_ts":   datetime.now(timezone.utc).isoformat(),
+            "new_quantity": random.randint(0, 5000),
+            "triggered_by": random.choice(["order", "manual", "supplier", "return"]),
+            "_ingestion_ts": datetime.now(timezone.utc).isoformat(),
         }
 
         self.producer.produce(
@@ -243,15 +250,17 @@ class NexusFlowProducer:
             on_delivery=self._delivery_report("inventory-events"),
         )
 
-    def run_live_stream(self,
-                        orders_per_second: float = 5.0,
-                        clicks_per_second: float = 50.0) -> None:
+    def run_live_stream(
+        self, orders_per_second: float = 5.0, clicks_per_second: float = 50.0
+    ) -> None:
         """
         Run continuous real-time streaming.
         Simulates realistic e-commerce traffic patterns.
         """
-        logger.info(f"🚀 Starting live stream: {orders_per_second} orders/s, "
-                    f"{clicks_per_second} clicks/s")
+        logger.info(
+            f"🚀 Starting live stream: {orders_per_second} orders/s, "
+            f"{clicks_per_second} clicks/s"
+        )
 
         order_interval = 1.0 / orders_per_second
         click_interval = 1.0 / clicks_per_second
@@ -274,8 +283,14 @@ class NexusFlowProducer:
                 # Manage sessions
                 if len(active_sessions) < 1000 or random.random() < 0.05:
                     session_id = str(uuid.uuid4())
-                    customer = random.choice(self.gen.customers) if random.random() > 0.3 else None
-                    active_sessions[session_id] = customer.customer_id if customer else None
+                    customer = (
+                        random.choice(self.gen.customers)
+                        if random.random() > 0.3
+                        else None
+                    )
+                    active_sessions[session_id] = (
+                        customer.customer_id if customer else None
+                    )
 
                 session_id = random.choice(list(active_sessions.keys()))
                 customer_id = active_sessions[session_id]
@@ -330,8 +345,10 @@ class NexusFlowProducer:
     def _log_stats(self) -> None:
         logger.info("📊 Producer Stats:")
         for topic, stats in self._stats.items():
-            logger.info(f"   {topic}: {stats['produced']:,} produced, "
-                        f"{stats['errors']} errors")
+            logger.info(
+                f"   {topic}: {stats['produced']:,} produced, "
+                f"{stats['errors']} errors"
+            )
 
 
 # ── ENTRYPOINT ────────────────────────────────────────────
@@ -339,11 +356,11 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode",            choices=["live", "burst"], default="live")
+    parser.add_argument("--mode", choices=["live", "burst"], default="live")
     parser.add_argument("--bootstrap-servers", required=True)
-    parser.add_argument("--schema-registry",   default=None)
-    parser.add_argument("--num-customers",     type=int,   default=10_000)
-    parser.add_argument("--num-orders",        type=int,   default=10_000)
+    parser.add_argument("--schema-registry", default=None)
+    parser.add_argument("--num-customers", type=int, default=10_000)
+    parser.add_argument("--num-orders", type=int, default=10_000)
     parser.add_argument("--orders-per-second", type=float, default=5.0)
     parser.add_argument("--clicks-per-second", type=float, default=50.0)
     args = parser.parse_args()

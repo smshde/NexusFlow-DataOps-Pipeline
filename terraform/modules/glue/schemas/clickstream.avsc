@@ -1,0 +1,30 @@
+{
+  "type": "record",
+  "name": "ClickstreamEvent",
+  "namespace": "io.nexusflow.events",
+  "fields": [
+    {"name": "event_id", "type": "string"},
+    {"name": "session_id", "type": "string"},
+    {"name": "customer_id", "type": ["null", "string"], "default": null},
+    {"name": "event_type", "type": "string"},
+    {"name": "event_ts", "type": "string"},
+    {"name": "page_url", "type": "string"},
+    {"name": "referrer_url", "type": ["null", "string"], "default": null},
+    {"name": "product_sku", "type": ["null", "string"], "default": null},
+    {"name": "product_category", "type": ["null", "string"], "default": null},
+    {"name": "search_query", "type": ["null", "string"], "default": null},
+    {"name": "device_type", "type": "string"},
+    {"name": "browser", "type": "string"},
+    {"name": "os", "type": "string"},
+    {"name": "ip_hash", "type": "string"},
+    {"name": "user_agent", "type": "string"},
+    {"name": "viewport_width", "type": "int"},
+    {"name": "viewport_height", "type": "int"},
+    {"name": "scroll_depth_pct", "type": ["null", "int"], "default": null},
+    {"name": "time_on_page_sec", "type": ["null", "int"], "default": null},
+    {"name": "utm_source", "type": ["null", "string"], "default": null},
+    {"name": "utm_medium", "type": ["null", "string"], "default": null},
+    {"name": "_ingestion_ts", "type": "string"},
+    {"name": "_partition_key", "type": "string"}
+  ]
+}

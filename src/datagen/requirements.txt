@@ -5,3 +5,7 @@ fastavro==1.9.4
 boto3==1.34.69 
 requests==2.34.2
 aws-msk-iam-sasl-signer-python==1.0.2
+aws-glue-schema-registry==1.1.3
+# Required by aws_schema_registry.adapter.kafka (KafkaSerializer imports the
+# `kafka` module at load time); not pulled in transitively by the above.
+kafka-python==2.0.2

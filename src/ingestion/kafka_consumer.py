@@ -21,24 +21,27 @@ Flush strategy:
 This service runs as a long-lived Kubernetes Deployment.
 """
 
-import os
-import sys
 import json
 import logging
+import os
 import signal
+import sys
 import time
+from collections import defaultdict
+from datetime import datetime, timezone
+from typing import Dict, List
+
 import boto3
 from aws_msk_iam_sasl_signer import MSKAuthTokenProvider
-from datetime import datetime, timezone
-from collections import defaultdict
-from typing import Dict, List
+from aws_schema_registry import SchemaRegistryClient
+from aws_schema_registry.adapter.kafka import KafkaDeserializer
 from confluent_kafka import Consumer, KafkaError, KafkaException
 
 # ── LOGGING ───────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("nexusflow.kafka_consumer")
 
@@ -53,16 +56,18 @@ class S3MicroBatchWriter:
       Each flush = one S3 object (one file per batch).
     """
 
-    def __init__(self,
-                 bucket: str,
-                 region: str,
-                 flush_size: int = 1_000,
-                 flush_interval_sec: int = 30):
+    def __init__(
+        self,
+        bucket: str,
+        region: str,
+        flush_size: int = 1_000,
+        flush_interval_sec: int = 30,
+    ):
 
-        self.bucket             = bucket
-        self.flush_size         = flush_size
+        self.bucket = bucket
+        self.flush_size = flush_size
         self.flush_interval_sec = flush_interval_sec
-        self.s3client           = boto3.client("s3", region_name=region)
+        self.s3client = boto3.client("s3", region_name=region)
 
         # In-memory buffers: topic → list of message dicts
         self.buffers: Dict[str, List[dict]] = defaultdict(list)
@@ -82,13 +87,10 @@ class S3MicroBatchWriter:
           bronze/{topic}/date=YYYY-MM-DD/
           {topic}_{YYYYMMDD}_{HHMMSS}_{epoch}.jsonl
         """
-        date_str  = batch_ts.strftime("%Y-%m-%d")
-        ts_str    = batch_ts.strftime("%Y%m%d_%H%M%S")
-        epoch     = int(batch_ts.timestamp())
-        return (
-            f"bronze/{topic}/date={date_str}/"
-            f"{topic}_{ts_str}_{epoch}.jsonl"
-        )
+        date_str = batch_ts.strftime("%Y-%m-%d")
+        ts_str = batch_ts.strftime("%Y%m%d_%H%M%S")
+        epoch = int(batch_ts.timestamp())
+        return f"bronze/{topic}/date={date_str}/" f"{topic}_{ts_str}_{epoch}.jsonl"
 
     def add_message(self, topic: str, message: dict) -> None:
         """Add message to buffer. Flush if size limit reached."""
@@ -101,8 +103,10 @@ class S3MicroBatchWriter:
         """Flush topics that have exceeded time interval."""
         now = time.time()
         for topic in list(self.buffers.keys()):
-            if (self.buffers[topic] and
-                    now - self.last_flush_time[topic] >= self.flush_interval_sec):
+            if (
+                self.buffers[topic]
+                and now - self.last_flush_time[topic] >= self.flush_interval_sec
+            ):
                 self._flush(topic, reason="time")
 
     def _flush(self, topic: str, reason: str = "manual") -> None:
@@ -110,26 +114,26 @@ class S3MicroBatchWriter:
         if not self.buffers[topic]:
             return
 
-        batch     = self.buffers[topic].copy()
+        batch = self.buffers[topic].copy()
         self.buffers[topic].clear()
-        batch_ts  = datetime.now(timezone.utc)
-        s3_key    = self._s3_key(topic, batch_ts)
+        batch_ts = datetime.now(timezone.utc)
+        s3_key = self._s3_key(topic, batch_ts)
 
         # Build JSONL content
         content = "\n".join(json.dumps(msg) for msg in batch)
 
         try:
             self.s3client.put_object(
-                Bucket      = self.bucket,
-                Key         = s3_key,
-                Body        = content.encode("utf-8"),
-                ContentType = "application/x-ndjson",
-                Metadata    = {
-                    "topic":        topic,
-                    "batch-size":   str(len(batch)),
+                Bucket=self.bucket,
+                Key=s3_key,
+                Body=content.encode("utf-8"),
+                ContentType="application/x-ndjson",
+                Metadata={
+                    "topic": topic,
+                    "batch-size": str(len(batch)),
                     "flush-reason": reason,
-                    "ingested-at":  batch_ts.isoformat(),
-                }
+                    "ingested-at": batch_ts.isoformat(),
+                },
             )
             self._stats[topic] += len(batch)
             self.last_flush_time[topic] = time.time()
@@ -155,11 +159,21 @@ class S3MicroBatchWriter:
         for topic, count in self._stats.items():
             logger.info(f"   {topic}: {count:,} messages written to S3")
 
+
 def _get_msk_token(config):
     """Generate MSK IAM OAuth token for librdkafka."""
     region = os.getenv("AWS_REGION", "ca-central-1")
     token, expiry_ms = MSKAuthTokenProvider.generate_auth_token(region)
     return token, expiry_ms / 1000
+
+
+def decode_message(topic, raw, deserializer=None):
+    """Avro-decode clickstream via Glue SR; JSON for every other topic."""
+    if topic == "clickstream" and deserializer is not None:
+        value, _schema = deserializer.deserialize(topic, raw)
+        return value
+    return json.loads(raw.decode("utf-8"))
+
 
 class NexusFlowKafkaConsumer:
     """
@@ -179,36 +193,38 @@ class NexusFlowKafkaConsumer:
         "user-sessions",
     ]
 
-    def __init__(self,
-                 bootstrap_servers: str,
-                 s3_bucket: str,
-                 aws_region: str       = "ca-central-1",
-                 consumer_group: str   = "nexusflow-s3-sink",
-                 flush_size: int       = 1_000,
-                 flush_interval: int   = 30):
+    def __init__(
+        self,
+        bootstrap_servers: str,
+        s3_bucket: str,
+        aws_region: str = "ca-central-1",
+        consumer_group: str = "nexusflow-s3-sink",
+        flush_size: int = 1_000,
+        flush_interval: int = 30,
+    ):
 
         self._running = True
-        self._stats   = {
-            "consumed":   0,
-            "errors":     0,
+        self._stats = {
+            "consumed": 0,
+            "errors": 0,
             "parse_errors": 0,
         }
 
         # ── KAFKA CONSUMER CONFIG ────────────────────────
         consumer_conf = {
-            "bootstrap.servers":         bootstrap_servers,
-            "group.id":                  consumer_group,
-            "auto.offset.reset":         "earliest",
-            "enable.auto.commit":        False,   # manual commit after S3 write
-            "max.poll.interval.ms":      300_000, # 5 min max between polls
-            "session.timeout.ms":        30_000,
-            "heartbeat.interval.ms":     10_000,
-            "fetch.min.bytes":           1,
-            "fetch.wait.max.ms":         500,
+            "bootstrap.servers": bootstrap_servers,
+            "group.id": consumer_group,
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,  # manual commit after S3 write
+            "max.poll.interval.ms": 300_000,  # 5 min max between polls
+            "session.timeout.ms": 30_000,
+            "heartbeat.interval.ms": 10_000,
+            "fetch.min.bytes": 1,
+            "fetch.wait.max.ms": 500,
             # IAM auth for MSK
-            "security.protocol":          "SASL_SSL",
-            "sasl.mechanisms":            "OAUTHBEARER",
-            "oauth_cb":                   _get_msk_token,
+            "security.protocol": "SASL_SSL",
+            "sasl.mechanisms": "OAUTHBEARER",
+            "oauth_cb": _get_msk_token,
         }
 
         self.consumer = Consumer(consumer_conf)
@@ -218,17 +234,25 @@ class NexusFlowKafkaConsumer:
             on_revoke=self._on_revoke,
         )
 
+        # Glue Schema Registry Avro deserializer for the clickstream topic
+        # (IAM-auth). Registry name matches the producer + Task 10 terraform.
+        glue = boto3.client("glue", region_name=aws_region)
+        registry = SchemaRegistryClient(
+            glue, registry_name=f"nexusflow-{os.getenv('NEXUSFLOW_ENV', 'dev')}"
+        )
+        self.avro_deserializer = KafkaDeserializer(registry)
+
         # ── S3 WRITER ────────────────────────────────────
         self.writer = S3MicroBatchWriter(
-            bucket             = s3_bucket,
-            region             = aws_region,
-            flush_size         = flush_size,
-            flush_interval_sec = flush_interval,
+            bucket=s3_bucket,
+            region=aws_region,
+            flush_size=flush_size,
+            flush_interval_sec=flush_interval,
         )
 
         # Graceful shutdown handlers
         signal.signal(signal.SIGTERM, self._shutdown)
-        signal.signal(signal.SIGINT,  self._shutdown)
+        signal.signal(signal.SIGINT, self._shutdown)
 
         logger.info(
             f"Consumer initialized — "
@@ -243,9 +267,7 @@ class NexusFlowKafkaConsumer:
         )
 
     def _on_revoke(self, consumer, partitions) -> None:
-        logger.info(
-            f"Partitions revoked — flushing buffers..."
-        )
+        logger.info("Partitions revoked — flushing buffers...")
         self.writer.flush_all()
 
     def _shutdown(self, signum, frame) -> None:
@@ -255,12 +277,14 @@ class NexusFlowKafkaConsumer:
     def _parse_message(self, msg) -> dict:
         """Parse Kafka message value as JSON."""
         try:
-            value = json.loads(msg.value().decode("utf-8"))
+            value = decode_message(
+                msg.topic(), msg.value(), deserializer=self.avro_deserializer
+            )
             # Add ingestion metadata
-            value["_kafka_topic"]     = msg.topic()
+            value["_kafka_topic"] = msg.topic()
             value["_kafka_partition"] = msg.partition()
-            value["_kafka_offset"]    = msg.offset()
-            value["_consumed_at"]     = datetime.utcnow().isoformat()
+            value["_kafka_offset"] = msg.offset()
+            value["_consumed_at"] = datetime.utcnow().isoformat()
             return value
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             self._stats["parse_errors"] += 1
@@ -270,21 +294,21 @@ class NexusFlowKafkaConsumer:
             )
             # Return raw message wrapped in error envelope
             return {
-                "_error":           "parse_failed",
-                "_raw":             msg.value().decode("utf-8", errors="replace"),
-                "_kafka_topic":     msg.topic(),
+                "_error": "parse_failed",
+                "_raw": msg.value().decode("utf-8", errors="replace"),
+                "_kafka_topic": msg.topic(),
                 "_kafka_partition": msg.partition(),
-                "_kafka_offset":    msg.offset(),
-                "_consumed_at":     datetime.utcnow().isoformat(),
+                "_kafka_offset": msg.offset(),
+                "_consumed_at": datetime.utcnow().isoformat(),
             }
 
     def run(self) -> None:
         """Main consume loop — runs until shutdown signal."""
         logger.info("🚀 Starting consume loop...")
-        last_stats_ts   = time.time()
-        last_commit_ts  = time.time()
-        stats_interval  = 60   # log stats every 60 seconds
-        commit_interval = 10   # commit offsets every 10 seconds
+        last_stats_ts = time.time()
+        last_commit_ts = time.time()
+        stats_interval = 60  # log stats every 60 seconds
+        commit_interval = 10  # commit offsets every 10 seconds
 
         try:
             while self._running:
@@ -300,8 +324,7 @@ class NexusFlowKafkaConsumer:
                     if msg.error().code() == KafkaError._PARTITION_EOF:
                         # End of partition — not an error
                         logger.debug(
-                            f"End of partition: "
-                            f"{msg.topic()}[{msg.partition()}]"
+                            f"End of partition: " f"{msg.topic()}[{msg.partition()}]"
                         )
                     else:
                         logger.error(f"Kafka error: {msg.error()}")
@@ -351,49 +374,34 @@ class NexusFlowKafkaConsumer:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="NexusFlow Kafka Consumer → S3 Writer"
+    parser = argparse.ArgumentParser(description="NexusFlow Kafka Consumer → S3 Writer")
+    parser.add_argument(
+        "--bootstrap-servers", required=True, help="MSK bootstrap broker string"
     )
     parser.add_argument(
-        "--bootstrap-servers",
-        required=True,
-        help="MSK bootstrap broker string"
+        "--s3-bucket", default="nexusflow-dev-lakehouse", help="S3 destination bucket"
     )
+    parser.add_argument("--aws-region", default="ca-central-1", help="AWS region")
     parser.add_argument(
-        "--s3-bucket",
-        default="nexusflow-dev-lakehouse",
-        help="S3 destination bucket"
-    )
-    parser.add_argument(
-        "--aws-region",
-        default="ca-central-1",
-        help="AWS region"
-    )
-    parser.add_argument(
-        "--consumer-group",
-        default="nexusflow-s3-sink",
-        help="Kafka consumer group ID"
+        "--consumer-group", default="nexusflow-s3-sink", help="Kafka consumer group ID"
     )
     parser.add_argument(
         "--flush-size",
         type=int,
         default=1_000,
-        help="Flush to S3 after N messages per topic"
+        help="Flush to S3 after N messages per topic",
     )
     parser.add_argument(
-        "--flush-interval",
-        type=int,
-        default=30,
-        help="Flush to S3 every N seconds"
+        "--flush-interval", type=int, default=30, help="Flush to S3 every N seconds"
     )
     args = parser.parse_args()
 
     consumer = NexusFlowKafkaConsumer(
-        bootstrap_servers = args.bootstrap_servers,
-        s3_bucket         = args.s3_bucket,
-        aws_region        = args.aws_region,
-        consumer_group    = args.consumer_group,
-        flush_size        = args.flush_size,
-        flush_interval    = args.flush_interval,
+        bootstrap_servers=args.bootstrap_servers,
+        s3_bucket=args.s3_bucket,
+        aws_region=args.aws_region,
+        consumer_group=args.consumer_group,
+        flush_size=args.flush_size,
+        flush_interval=args.flush_interval,
     )
     consumer.run()
