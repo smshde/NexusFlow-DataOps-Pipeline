@@ -310,10 +310,10 @@ class BronzeToSilverProcessor:
         )
         logger.info(f"  ✅ Orders → {output_path}")
 
-    def process_customers(self) -> None:
+    def process_customers(self, date_partition: str) -> None:
         """Process customer data with PII masking + SCD Type 2 prep."""
         logger.info("Processing customers with PII masking...")
-        input_path = f"{self.bronze_base}/customers/*.jsonl"
+        input_path = f"{self.bronze_base}/customers/date={date_partition}/*.jsonl"
         output_path = f"{self.silver_base}/customers/"
 
         df_raw = (
@@ -436,7 +436,7 @@ class BronzeToSilverProcessor:
     def process_inventory(self, snapshot_date: str) -> None:
         """Process inventory CSV snapshots."""
         logger.info(f"Processing inventory snapshot: {snapshot_date}")
-        input_path = f"{self.bronze_base}/inventory/{snapshot_date}/*.csv"
+        input_path = f"{self.bronze_base}/inventory/date={snapshot_date}/*.csv"
         output_path = f"{self.silver_base}/inventory/"
 
         df = (
@@ -573,7 +573,7 @@ if __name__ == "__main__":
         processor.process_orders(args.date_partition)
 
     if "customers" in args.entities:
-        processor.process_customers()
+        processor.process_customers(args.date_partition)
 
     if "clickstream" in args.entities:
         processor.process_clickstream(args.date_partition)

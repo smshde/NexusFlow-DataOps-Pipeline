@@ -118,7 +118,8 @@ info "  Building nexusflow-airflow..."
 docker buildx build \
   --platform linux/amd64 \
   -t $ECR_REGISTRY/nexusflow-airflow:2.10.5 \
-  src/airflow/ \
+  -f src/airflow/Dockerfile \
+  . \
   --push
 pass "  nexusflow-airflow pushed"
 pass "All images in ECR"
@@ -200,7 +201,7 @@ kubectl create secret generic alertmanager-slack \
   --namespace monitoring \
   --from-literal=slack_api_url="$SLACK_WEBHOOK_URL"
 
-pip install cryptography --quiet 2>/dev/null || true
+python3 -m pip install cryptography --quiet 2>/dev/null || true
 FERNET=$(python3 -c \
   "from cryptography.fernet import Fernet; \
   print(Fernet.generate_key().decode())")
