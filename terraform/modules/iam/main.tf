@@ -172,7 +172,8 @@ resource "aws_iam_role_policy" "airflow_permissions" {
         Effect = "Allow"
         Action = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
         Resource = [
-          "arn:aws:secretsmanager:${var.region}:${var.account_id}:secret:nexusflow/*"
+          "arn:aws:secretsmanager:${var.region}:${var.account_id}:secret:nexusflow/*",
+          "arn:aws:secretsmanager:${var.region}:${var.account_id}:secret:redshift!nexusflow-${var.environment}-ns-*"
         ]
         # ⚠️ CHANGE "nexusflow" prefix if project name renamed
       },
@@ -185,7 +186,18 @@ resource "aws_iam_role_policy" "airflow_permissions" {
           # GlueCrawlerOperator manages tags on the crawler ARN as part
           # of each run (status polling + tag sync) — GetTags alone
           # wasn't enough, it also writes/removes tags.
-          "glue:GetTags", "glue:TagResource", "glue:UntagResource"]
+        "glue:GetTags", "glue:TagResource", "glue:UntagResource"]
+        Resource = ["*"]
+      },
+      {
+        Sid    = "RedshiftServerlessCredsForGE"
+        Effect = "Allow"
+        Action = [
+          "redshift-serverless:GetCredentials",
+          "redshift-data:ExecuteStatement",
+          "redshift-data:DescribeStatement",
+          "redshift-data:GetStatementResult"
+        ]
         Resource = ["*"]
       }
     ]
@@ -337,7 +349,20 @@ resource "aws_iam_role_policy" "app_permissions" {
           "arn:aws:s3:::${var.lakehouse_bucket}/bronze/customers/*",
           "arn:aws:s3:::${var.lakehouse_bucket}/bronze/inventory/*"
         ]
-      }
+      },
+      {
+        Sid    = "GlueSchemaRegistry"
+        Effect = "Allow"
+        Action = [
+          "glue:GetSchemaByDefinition",
+          "glue:GetSchemaVersion",
+          "glue:RegisterSchemaVersion",
+          "glue:PutSchemaVersionMetadata",
+          "glue:GetRegistry",
+          "glue:ListSchemaVersions"
+        ]
+        Resource = ["*"]
+      },
     ]
   })
 }

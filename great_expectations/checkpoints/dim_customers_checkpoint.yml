@@ -1,0 +1,15 @@
+name: dim_customers_checkpoint
+config_version: 1.0
+class_name: Checkpoint
+run_name_template: "%Y%m%d-%H%M%S-dim-customers"
+validations:
+  - batch_request:
+      datasource_name: redshift_gold
+      data_connector_name: gold_tables
+      data_asset_name: dim_customers
+    expectation_suite_name: dim_customers_suite
+action_list:
+  - name: store_validation_result
+    action: {class_name: StoreValidationResultAction}
+  - name: update_data_docs
+    action: {class_name: UpdateDataDocsAction}

@@ -1,0 +1,15 @@
+name: fact_orders_checkpoint
+config_version: 1.0
+class_name: Checkpoint
+run_name_template: "%Y%m%d-%H%M%S-fact-orders"
+validations:
+  - batch_request:
+      datasource_name: redshift_gold
+      data_connector_name: gold_tables
+      data_asset_name: fact_orders
+    expectation_suite_name: fact_orders_suite
+action_list:
+  - name: store_validation_result
+    action: {class_name: StoreValidationResultAction}
+  - name: update_data_docs
+    action: {class_name: UpdateDataDocsAction}

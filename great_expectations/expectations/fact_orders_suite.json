@@ -1,0 +1,13 @@
+{
+  "expectation_suite_name": "fact_orders_suite",
+  "ge_cloud_id": null,
+  "meta": {},
+  "expectations": [
+    {"expectation_type": "expect_table_row_count_to_be_between", "kwargs": {"min_value": 1}},
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "order_id"}},
+    {"expectation_type": "expect_column_values_to_be_unique", "kwargs": {"column": "order_id"}},
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "customer_id"}},
+    {"expectation_type": "expect_column_values_to_be_between", "kwargs": {"column": "total_amount", "min_value": 0}},
+    {"expectation_type": "expect_column_values_to_be_in_set", "kwargs": {"column": "order_status", "value_set": ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "refunded"]}}
+  ]
+}

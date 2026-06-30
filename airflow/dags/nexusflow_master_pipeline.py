@@ -13,58 +13,64 @@ Schedule: Daily at 03:00 UTC
 Backfill: Supported (catchup=True)
 """
 
-from datetime import datetime, timedelta
-import json
 import logging
-from typing import Any
+from datetime import datetime, timedelta
 
-from airflow import DAG
 from airflow.decorators import task, task_group
 from airflow.models import Variable
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator
+from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.amazon.aws.operators.emr import (
     EmrServerlessStartJobOperator,
 )
-from airflow.providers.amazon.aws.sensors.emr import EmrServerlessJobSensor
 from airflow.providers.amazon.aws.operators.glue_crawler import GlueCrawlerOperator
-from airflow.providers.amazon.aws.sensors.s3 import S3KeySensor
-from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
 from airflow.utils.trigger_rule import TriggerRule
 
+from airflow import DAG
+
 logger = logging.getLogger(__name__)
 
 # ── CONSTANTS ─────────────────────────────────────────────
-ENV            = Variable.get("nexusflow_env",            default_var="dev")
-BRONZE_BUCKET  = Variable.get("nexusflow_bronze_bucket",  default_var="nexusflow-dev-lakehouse")
-SILVER_BUCKET  = Variable.get("nexusflow_silver_bucket",  default_var="nexusflow-dev-lakehouse")
-GOLD_BUCKET    = Variable.get("nexusflow_gold_bucket",    default_var="nexusflow-dev-lakehouse")
-EMR_APP_ID     = Variable.get("nexusflow_emr_app_id",     default_var="")
-EMR_ROLE_ARN   = Variable.get("nexusflow_emr_role_arn",   default_var="")
-DBT_IMAGE      = Variable.get("nexusflow_dbt_image",      default_var="nexusflow-dbt:latest")
-SLACK_CONN     = "slack_webhook_nexusflow"
-AWS_CONN       = "aws_default"
+ENV = Variable.get("nexusflow_env", default_var="dev")
+BRONZE_BUCKET = Variable.get(
+    "nexusflow_bronze_bucket", default_var="nexusflow-dev-lakehouse"
+)
+SILVER_BUCKET = Variable.get(
+    "nexusflow_silver_bucket", default_var="nexusflow-dev-lakehouse"
+)
+GOLD_BUCKET = Variable.get(
+    "nexusflow_gold_bucket", default_var="nexusflow-dev-lakehouse"
+)
+EMR_APP_ID = Variable.get("nexusflow_emr_app_id", default_var="")
+EMR_ROLE_ARN = Variable.get("nexusflow_emr_role_arn", default_var="")
+DBT_IMAGE = Variable.get("nexusflow_dbt_image", default_var="nexusflow-dbt:latest")
+SLACK_CONN = "slack_webhook_nexusflow"
+AWS_CONN = "aws_default"
 
 # Spark job S3 paths
-ARTIFACTS_BUCKET = Variable.get("nexusflow_artifacts_bucket", default_var="nexusflow-dev-artifacts")
+ARTIFACTS_BUCKET = Variable.get(
+    "nexusflow_artifacts_bucket", default_var="nexusflow-dev-artifacts"
+)
 SPARK_SCRIPT_PATH = f"s3://{ARTIFACTS_BUCKET}/spark-scripts"
 
 # ── DEFAULT ARGS ──────────────────────────────────────────
 default_args = {
-    "owner":            "data-engineering",
-    "depends_on_past":  False,
+    "owner": "data-engineering",
+    "depends_on_past": False,
     "email_on_failure": False,
-    "email_on_retry":   False,
-    "retries":          2,
-    "retry_delay":      timedelta(minutes=5),
+    "email_on_retry": False,
+    "retries": 2,
+    "retry_delay": timedelta(minutes=5),
     "retry_exponential_backoff": True,
-    "max_retry_delay":  timedelta(minutes=30),
+    "max_retry_delay": timedelta(minutes=30),
 }
 
 
 # ── HELPER FUNCTIONS ──────────────────────────────────────
+
 
 def get_date_partition(execution_date: datetime) -> str:
     """Get date partition string from execution date."""
@@ -86,14 +92,18 @@ def check_bronze_completeness(**context) -> str:
         for p in required_prefixes
     )
 
-    return "validate_bronze.bronze_complete" if all_present else "validate_bronze.bronze_incomplete"
+    return (
+        "validate_bronze.bronze_complete"
+        if all_present
+        else "validate_bronze.bronze_incomplete"
+    )
 
 
 # ── DAG DEFINITION ────────────────────────────────────────
 with DAG(
     dag_id="nexusflow_master_pipeline",
     description="NexusFlow end-to-end ELT pipeline — Bronze → Silver → Gold → ML Features",
-    schedule_interval="0 3 * * *",          # Daily 03:00 UTC
+    schedule_interval="0 3 * * *",  # Daily 03:00 UTC
     start_date=datetime(2026, 6, 15),
     catchup=False,
     max_active_runs=3,
@@ -121,8 +131,7 @@ with DAG(
             task_id="bronze_incomplete",
             slack_webhook_conn_id=SLACK_CONN,
             message=(
-                "⚠️ NexusFlow: Bronze data incomplete for "
-                "{{ ds }} — pipeline paused"
+                "⚠️ NexusFlow: Bronze data incomplete for " "{{ ds }} — pipeline paused"
             ),
         )
 
@@ -152,12 +161,18 @@ with DAG(
                     "sparkSubmit": {
                         "entryPoint": f"{SPARK_SCRIPT_PATH}/bronze_to_silver.py",
                         "entryPointArguments": [
-                            "--env",            ENV,
-                            "--bronze-bucket",  BRONZE_BUCKET,
-                            "--silver-bucket",  SILVER_BUCKET,
-                            "--date-partition", "{{ ds }}",
-                            "--entities",       entity,
-                            "--aws-region",     "ca-central-1",
+                            "--env",
+                            ENV,
+                            "--bronze-bucket",
+                            BRONZE_BUCKET,
+                            "--silver-bucket",
+                            SILVER_BUCKET,
+                            "--date-partition",
+                            "{{ ds }}",
+                            "--entities",
+                            entity,
+                            "--aws-region",
+                            "ca-central-1",
                         ],
                         # Sized for the EMR app's demo cap (16 vCPU / 64 GB total,
                         # terraform/modules/emr/main.tf) shared across 4 parallel
@@ -187,13 +202,62 @@ with DAG(
             )
 
         # Parallel Spark jobs per entity
-        spark_orders      = make_spark_job("orders")
+        spark_orders = make_spark_job("orders")
         spark_clickstream = make_spark_job("clickstream")
-        spark_inventory   = make_spark_job("inventory")
-        spark_customers   = make_spark_job("customers")
+        spark_inventory = make_spark_job("inventory")
+        spark_customers = make_spark_job("customers")
+
+        spark_reviews = EmrServerlessStartJobOperator(
+            task_id="spark_reviews",
+            application_id=EMR_APP_ID,
+            execution_role_arn=EMR_ROLE_ARN,
+            job_driver={
+                "sparkSubmit": {
+                    "entryPoint": f"{SPARK_SCRIPT_PATH}/bronze_to_silver.py",
+                    "entryPointArguments": [
+                        "--env",
+                        ENV,
+                        "--bronze-bucket",
+                        BRONZE_BUCKET,
+                        "--silver-bucket",
+                        SILVER_BUCKET,
+                        "--date-partition",
+                        "{{ ds }}",
+                        "--entities",
+                        "reviews",
+                        "--aws-region",
+                        "ca-central-1",
+                    ],
+                    "sparkSubmitParameters": (
+                        "--packages com.databricks:spark-xml_2.12:0.18.0 "
+                        "--conf spark.executor.cores=1 "
+                        "--conf spark.executor.memory=2g "
+                        "--conf spark.driver.memory=2g "
+                        "--conf spark.dynamicAllocation.enabled=true "
+                        "--conf spark.dynamicAllocation.minExecutors=1 "
+                        "--conf spark.dynamicAllocation.maxExecutors=2 "
+                        "--conf spark.sql.adaptive.enabled=true"
+                    ),
+                }
+            },
+            configuration_overrides={
+                "monitoringConfiguration": {
+                    "s3MonitoringConfiguration": {
+                        "logUri": f"s3://{ARTIFACTS_BUCKET}/emr-logs/"
+                    }
+                }
+            },
+            aws_conn_id=AWS_CONN,
+        )
 
         # All in parallel
-        [spark_orders, spark_clickstream, spark_inventory, spark_customers]
+        [
+            spark_orders,
+            spark_clickstream,
+            spark_inventory,
+            spark_customers,
+            spark_reviews,
+        ]
 
     silver_processing = bronze_to_silver_group()
 
@@ -232,8 +296,12 @@ with DAG(
         from kubernetes.client import models as k8s
 
         env_from = [
-            k8s.V1EnvFromSource(config_map_ref=k8s.V1ConfigMapEnvSource(name="nexusflow-config")),
-            k8s.V1EnvFromSource(secret_ref=k8s.V1SecretEnvSource(name="nexusflow-secrets")),
+            k8s.V1EnvFromSource(
+                config_map_ref=k8s.V1ConfigMapEnvSource(name="nexusflow-config")
+            ),
+            k8s.V1EnvFromSource(
+                secret_ref=k8s.V1SecretEnvSource(name="nexusflow-secrets")
+            ),
         ]
 
         def make_dbt_task(task_id: str, command: str) -> KubernetesPodOperator:
@@ -290,12 +358,28 @@ with DAG(
     # ── DATA QUALITY: GREAT EXPECTATIONS ──────────────────
     @task(task_id="great_expectations_validate")
     def run_great_expectations(**context) -> dict:
-        """Run Great Expectations checkpoints on gold tables."""
+        """Run Great Expectations checkpoints on gold tables in Redshift."""
+        import json as _json
+        import os
+
+        import boto3
+
         import great_expectations as gx
 
-        context_gx = gx.get_context(
-            context_root_dir="/app/great_expectations"
-        )
+        # GE's connection_string + data connector use ${...} env
+        # substitution (check great_expectations/great_expectations.yml).
+        # The scheduler pod gets REDSHIFT_HOST + REDSHIFT_SECRET_ARN from
+        # the airflow-dynamic-config ConfigMap; the admin password is
+        # never an env var — fetching it from Secrets Manager at runtime.
+        region = os.environ.get("AWS_REGION", "ca-central-1")
+        secret_arn = os.environ["REDSHIFT_SECRET_ARN"]
+        sm = boto3.client("secretsmanager", region_name=region)
+        secret = _json.loads(sm.get_secret_value(SecretId=secret_arn)["SecretString"])
+        os.environ["REDSHIFT_PASSWORD"] = secret["password"]
+        os.environ["GE_GOLD_SCHEMA"] = f"dbt_{ENV}_gold"
+        os.environ["GE_ML_SCHEMA"] = f"dbt_{ENV}_ml_features"
+
+        context_gx = gx.get_context(context_root_dir="/app/great_expectations")
 
         checkpoints = [
             "fact_orders_checkpoint",
@@ -325,31 +409,19 @@ with DAG(
     # ── ML FEATURE STORE SYNC ─────────────────────────────
     @task(task_id="sync_feature_store")
     def sync_feature_store(**context) -> dict:
-        """Push latest customer features to SageMaker Feature Store."""
-        import boto3
-        import pandas as pd
-        import awswrangler as wr
+        """No-op placeholder for SageMaker Feature Store sync.
 
-        date = context["ds"]
-
-        # Read gold features from Redshift
-        query = f"""
-            SELECT *
-            FROM ml_features.customer_ml_features
-            WHERE snapshot_date = '{date}'
-            LIMIT 1000000
+        The real ingest (Redshift read -> wr.feature_store.ingest) is
+        intentionally not wired: there is no SageMaker Feature Group in
+        terraform and no awswrangler in the scheduler image, so importing
+        it unconditionally used to crash this task and poison the DAG.
+        To productionize: add a SageMaker module + feature group, install
+        awswrangler in src/airflow/Dockerfile, grant sagemaker:* on the
+        airflow IRSA role, then implement the ingest below.
         """
-
-        # In production: use Redshift Data API or psycopg2
-        logger.info(f"Syncing feature store for date: {date}")
-
-        # Simulate success (in prod, uncomment actual code)
-        # df = wr.redshift.read_sql_query(sql=query, con=conn)
-        # feature_group_name = f"nexusflow-customer-features-{ENV}"
-        # wr.feature_store.ingest(df=df, feature_group_name=feature_group_name)
-
-        logger.info("✅ Feature store sync complete")
-        return {"status": "success", "date": date}
+        date = context["ds"]
+        logger.info(f"[stub] feature store sync skipped for date: {date}")
+        return {"status": "skipped", "date": date}
 
     feature_store_sync = sync_feature_store()
 
