@@ -1,6 +1,9 @@
 # ============================================================
-# NexusFlow DataOps Portfolio — Master Makefile
+# NexusFlow DataOps Portfolio — Master Makefile 
 # Usage: make deploy ENV=dev | make destroy ENV=dev
+
+# (Boilerplate only — not wired. Actual deploy/destroy via
+# scripts/deploy/full_deploy.sh and scripts/teardown/destroy.sh)
 # ============================================================
 
 ENV          ?= dev
@@ -25,8 +28,8 @@ help: ## Show this help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(NC) %s\n", $$1, $$2}'
 
 ## ── FULL DEPLOY ───────────────────────────────────────────
-deploy: check-prereqs infra-init infra-apply ecr-login build push k8s-deploy validate ## 🚀 Full stack deploy (push-button)
-	@echo "$(GREEN)✅ NexusFlow deployed to $(ENV)$(NC)"
+deploy: check-prereqs infra-init infra-apply ecr-login build push k8s-deploy validate ## Full stack deploy (push-button)
+	@echo "$(GREEN)   NexusFlow deployed to $(ENV)$(NC)"
 	@echo "$(GREEN)   Airflow UI:   http://$(shell kubectl get svc airflow-webserver -n airflow -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')$(NC)"
 	@echo "$(GREEN)   Grafana:      http://$(shell kubectl get svc grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')$(NC)"
 	@echo "$(GREEN)   Analytics API:http://$(shell kubectl get svc nexusflow-api -n nexusflow -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')$(NC)"
@@ -145,7 +148,7 @@ validate: ## Run end-to-end validation
 	bash scripts/validate/e2e_test.sh $(ENV)
 
 ## ── FULL TEARDOWN ─────────────────────────────────────────
-destroy: ## 🔥 Destroy everything (EKS → ECR → Infra)
+destroy: ## Destroy everything (EKS → ECR → Infra)
 	@echo "$(RED)WARNING: This will destroy all resources in $(ENV)$(NC)"
 	@read -p "Type 'yes' to confirm: " confirm && [ "$$confirm" = "yes" ]
 	bash scripts/teardown/destroy.sh $(ENV) $(AWS_REGION)
