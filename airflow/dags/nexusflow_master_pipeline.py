@@ -187,7 +187,7 @@ with DAG(
                             "--conf spark.executor.instances=1 "
                             "--conf spark.dynamicAllocation.enabled=true "
                             "--conf spark.dynamicAllocation.minExecutors=1 "
-                            "--conf spark.dynamicAllocation.maxExecutors=3 "
+                            "--conf spark.dynamicAllocation.maxExecutors=2 "
                             "--conf spark.sql.adaptive.enabled=true"
                         ),
                     }
@@ -237,7 +237,7 @@ with DAG(
                         "--conf spark.executor.instances=1 "
                         "--conf spark.dynamicAllocation.enabled=true "
                         "--conf spark.dynamicAllocation.minExecutors=1 "
-                        "--conf spark.dynamicAllocation.maxExecutors=3 "
+                        "--conf spark.dynamicAllocation.maxExecutors=2 "
                         "--conf spark.sql.adaptive.enabled=true"
                     ),
                 }
