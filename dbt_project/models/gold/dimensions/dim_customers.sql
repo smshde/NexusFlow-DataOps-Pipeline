@@ -3,13 +3,7 @@
     materialized = 'table',
     dist         = 'customer_sk',
     sort         = ['customer_id', '_valid_from'],
-    tags         = ['gold', 'dimension', 'scd2'],
-    meta         = {
-      'owner': 'data-engineering',
-      'description': 'Customer dimension with SCD Type 2 history',
-      'pii': false,
-      'scd_type': 2
-    }
+    tags         = ['gold', 'dimension', 'scd2']
   )
 }}
 
