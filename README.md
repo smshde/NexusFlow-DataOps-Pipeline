@@ -2,12 +2,34 @@
 
 > Production-grade e-commerce DataOps pipeline on AWS — streaming + batch ingestion, medallion lakehouse, serverless compute, dbt transformations, automated quality gates, and full IaC.
 
-[![CI](https://github.com/smitshah/NexusFlow-DataOps-Pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/smitshah/NexusFlow-DataOps-Pipeline/actions)
+[![CI](https://github.com/smshde/NexusFlow-DataOps-Pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/smshde/NexusFlow-DataOps-Pipeline/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![AWS](https://img.shields.io/badge/AWS-IAM%20%7C%20VPC%20%7C%20S3%20%7C%20ECR%20%7C%20EKS%20%7C%20MSK%20%7C%20GLUE%20%7C%20EMR%20Serverless%20%7C%20Redshift-orange)
 ![dbt](https://img.shields.io/badge/dbt-1.8-red)
 ![Airflow](https://img.shields.io/badge/Airflow-2.10.5-lightblue)
 ![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.8-7B42BC?logo=terraform)
+
+---
+
+## Table of Contents
+
+- [NexusFlow DataOps Pipeline](#nexusflow-dataops-pipeline)
+  - [Table of Contents](#table-of-contents)
+  - [Architecture](#architecture)
+  - [Tech Stack](#tech-stack)
+  - [Data Sources \& Formats](#data-sources--formats)
+  - [Pipeline DAG](#pipeline-dag)
+  - [Data Model (Gold Layer)](#data-model-gold-layer)
+  - [Project Structure](#project-structure)
+  - [Prerequisites](#prerequisites)
+  - [Security \& IAM](#security--iam)
+  - [Deploy](#deploy)
+  - [CI/CD](#cicd)
+  - [Data Quality](#data-quality)
+  - [Monitoring](#monitoring)
+  - [Cost Estimate](#cost-estimate)
+  - [Teardown](#teardown)
+  - [License](#license)
 
 ---
 
@@ -287,7 +309,7 @@ airflow dags trigger nexusflow_master_pipeline
 
 ## CI/CD
 
-![CI Run](docs/ci_run.png)
+![CI Run](docs/CI_run.png)
 
 | Workflow | Trigger | Steps |
 |---|---|---|
