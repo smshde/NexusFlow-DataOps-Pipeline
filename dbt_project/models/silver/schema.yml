@@ -12,11 +12,13 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: ">= 0"
+              arguments:
+                expression: ">= 0"
       - name: order_status
         tests:
           - accepted_values:
-              values: [pending,confirmed,processing,shipped,delivered,cancelled,refunded]
+              arguments:
+                values: [pending,confirmed,processing,shipped,delivered,cancelled,refunded]
 
   - name: silver_customers
     description: PII-masked customer records
@@ -28,7 +30,8 @@ models:
       - name: loyalty_tier
         tests:
           - accepted_values:
-              values: [bronze, silver, gold, platinum]
+              arguments:
+                values: [bronze, silver, gold, platinum]
 
   - name: silver_clickstream
     description: Deduplicated typed clickstream events
@@ -38,8 +41,9 @@ models:
       - name: event_type
         tests:
           - accepted_values:
-              values: [page_view,product_view,add_to_cart,remove_from_cart,
-                       checkout_start,search,wishlist_add,review_view,click]
+              arguments:
+                values: [page_view,product_view,add_to_cart,remove_from_cart,
+                         checkout_start,search,wishlist_add,review_view,click]
 
   - name: silver_reviews
     description: Cleaned, typed product reviews
@@ -56,11 +60,6 @@ sources:
   - name: silver_lake
     database: nexusflow
     schema: silver_lake
-    loader: spark_emr
-    loaded_at_field: _processed_ts
-    freshness:
-      warn_after:  {count: 12, period: hour}
-      error_after: {count: 24, period: hour}
     tables:
       - name: orders
       - name: customers

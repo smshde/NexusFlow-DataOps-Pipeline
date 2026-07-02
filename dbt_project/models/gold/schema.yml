@@ -10,10 +10,11 @@ models:
     description: >
       Central fact table for all e-commerce orders.
       Grain: one row per order_id. No PII.
-    meta:
-      owner: data-engineering
-      domain: commerce
-      sla: daily_6am
+    config:
+      meta:
+        owner: data-engineering
+        domain: commerce
+        sla: daily_6am
     columns:
       - name: order_sk
         description: Surrogate key (MD5 hash of order_id)
@@ -32,46 +33,51 @@ models:
         tests:
           - not_null
           - relationships:
-              to: ref('dim_customers')
-              field: customer_id
-              severity: warn
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+              config:
+                severity: warn
 
       - name: order_date
         tests:
           - not_null
-          # column-level expression_is_true auto-prepends column_name —
-          # expression here is just the operator continuation, not the
-          # full "order_date >= ..." (that doubled to "order_date order_date
-          # >= ..." and errored with a syntax error).
           - dbt_utils.expression_is_true:
-              expression: ">= '2020-01-01'"
+              arguments:
+                expression: ">= '2020-01-01'"
               name: order_date_not_before_2020
 
       - name: total_amount
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: ">= 0"
+              arguments:
+                expression: ">= 0"
               name: total_amount_non_negative
 
       - name: order_status
         tests:
           - not_null
           - accepted_values:
-              values: [pending, confirmed, processing, shipped, delivered, cancelled, refunded]
+              arguments:
+                values: [pending, confirmed, processing, shipped, delivered, cancelled, refunded]
 
       - name: payment_method
         tests:
           - accepted_values:
-              values: [credit_card, debit_card, paypal, apple_pay, google_pay,
-                       buy_now_pay_later, gift_card]
-              severity: warn
+              arguments:
+                values: [credit_card, debit_card, paypal, apple_pay, google_pay,
+                         buy_now_pay_later, gift_card]
+              config:
+                severity: warn
 
       - name: shipping_method
         tests:
           - accepted_values:
-              values: [standard, express, overnight, pickup, same_day]
-              severity: warn
+              arguments:
+                values: [standard, express, overnight, pickup, same_day]
+              config:
+                severity: warn
 
       - name: customer_sk
         tests:
@@ -81,21 +87,19 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: ">= 1"
+              arguments:
+                expression: ">= 1"
               name: item_count_at_least_one
 
     tests:
-      # Row count freshness check. Model-level expression_is_true wraps the
-      # expression in a per-row WHERE NOT(...) — a bare count(*) there is an
-      # aggregate-in-WHERE, which Redshift rejects. Wrapping it as a scalar
-      # subquery against the model's own relation avoids that.
       - dbt_utils.expression_is_true:
-          expression: "(select count(*) from {{ ref('fact_orders') }}) > 0"
+          arguments:
+            expression: "(select count(*) from {{ ref('fact_orders') }}) > 0"
           name: fact_orders_not_empty
 
-      # No future-dated orders
       - dbt_utils.expression_is_true:
-          expression: "order_date <= current_timestamp + interval '1 hour'"
+          arguments:
+            expression: "order_date <= current_timestamp + interval '1 hour'"
           name: no_future_orders
 
   # ── DIM CUSTOMERS ────────────────────────────────────────
@@ -116,19 +120,22 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: [bronze, silver, gold, platinum]
+              arguments:
+                values: [bronze, silver, gold, platinum]
 
       - name: segment
         tests:
           - not_null
           - accepted_values:
-              values: [bargain_hunter, loyal, at_risk, new, vip, dormant]
+              arguments:
+                values: [bargain_hunter, loyal, at_risk, new, vip, dormant]
 
       - name: _is_current
         tests:
           - not_null
           - accepted_values:
-              values: [true, false]
+              arguments:
+                values: [true, false]
 
       - name: email_hash
         description: SHA-256 of email — safe for joining
@@ -138,38 +145,34 @@ models:
       - name: age_bracket
         tests:
           - accepted_values:
-              values: ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
-              severity: warn
+              arguments:
+                values: ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
+              config:
+                severity: warn
 
       - name: loyalty_tier_rank
         tests:
           - dbt_utils.expression_is_true:
-              expression: "between 1 and 4"
+              arguments:
+                expression: "between 1 and 4"
               name: loyalty_rank_valid_range
 
     tests:
-      # email_hash check moved here: column-level expression_is_true
-      # auto-prepends column_name, which doesn't compose with a function
-      # call wrapping the column (len(email_hash) became
-      # "email_hash len(email_hash) = 64" — syntax error). Model-level
-      # tests get no auto-prepend, so the full expression works as-is.
       - dbt_utils.expression_is_true:
-          expression: "len(email_hash) = 64"
+          arguments:
+            expression: "len(email_hash) = 64"
           name: email_hash_valid_sha256
 
-      # Exactly one current record per customer_id.
-      # {{ this }} inside a generic test resolves to the TEST's own
-      # store_failures relation (which doesn't exist until the test
-      # succeeds) — not the model under test. Use {{ ref(...) }} instead.
       - dbt_utils.expression_is_true:
-          expression: |
-            (SELECT count(*) FROM (
-              SELECT customer_id, count(*) as cnt
-              FROM {{ ref('dim_customers') }}
-              WHERE _is_current = true
-              GROUP BY customer_id
-              HAVING count(*) > 1
-            ) dups) = 0
+          arguments:
+            expression: |
+              (SELECT count(*) FROM (
+                SELECT customer_id, count(*) as cnt
+                FROM {{ ref('dim_customers') }}
+                WHERE _is_current = true
+                GROUP BY customer_id
+                HAVING count(*) > 1
+              ) dups) = 0
           name: one_current_record_per_customer
 
   # ── DIM PROMOTIONS ───────────────────────────────────────
@@ -203,38 +206,44 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "between 1 and 5"
+              arguments:
+                expression: "between 1 and 5"
               name: r_score_valid_range
 
       - name: f_score
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "between 1 and 5"
+              arguments:
+                expression: "between 1 and 5"
               name: f_score_valid_range
 
       - name: m_score
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "between 1 and 5"
+              arguments:
+                expression: "between 1 and 5"
               name: m_score_valid_range
 
       - name: churn_risk_tier
         tests:
           - accepted_values:
-              values: [low, medium, high]
+              arguments:
+                values: [low, medium, high]
 
       - name: rfm_total_score
         tests:
           - dbt_utils.expression_is_true:
-              expression: "between 3 and 15"
+              arguments:
+                expression: "between 3 and 15"
               name: rfm_score_valid_range
 
       - name: total_revenue
         tests:
           - dbt_utils.expression_is_true:
-              expression: ">= 0"
+              arguments:
+                expression: ">= 0"
               name: total_revenue_non_negative
 
       - name: customer_profile_text
@@ -242,16 +251,14 @@ models:
           - not_null
 
     tests:
-      # Unique per customer per day
       - dbt_utils.unique_combination_of_columns:
-          combination_of_columns: [customer_id, snapshot_date]
+          arguments:
+            combination_of_columns: [customer_id, snapshot_date]
           name: customer_features_unique_per_day
 
-      # profile_text check moved here: same column_name auto-prepend
-      # issue as email_hash_valid_sha256 above — function-wrapped
-      # expressions don't compose at column level.
       - dbt_utils.expression_is_true:
-          expression: "len(customer_profile_text) > 50"
+          arguments:
+            expression: "len(customer_profile_text) > 50"
           name: profile_text_has_content
 
   # ── FACT REVIEWS ─────────────────────────────────────────
@@ -265,6 +272,6 @@ models:
       - name: rating
         tests:
           - dbt_utils.expression_is_true:
-              expression: "between 1 and 5"
+              arguments:
+                expression: "between 1 and 5"
               name: review_rating_valid_range
-

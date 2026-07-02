@@ -5,14 +5,7 @@
     unique_key       = 'order_sk',
     dist             = 'order_sk',
     sort             = ['order_date', 'customer_sk'],
-    tags             = ['gold', 'fact', 'orders'],
-    meta             = {
-      'owner': 'data-engineering',
-      'domain': 'commerce',
-      'description': 'Fact table for all e-commerce orders with full line-item detail',
-      'sla': 'daily_6am',
-      'pii': false
-    }
+    tags             = ['gold', 'fact', 'orders']
   )
 }}
 

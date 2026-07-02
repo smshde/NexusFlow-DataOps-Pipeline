@@ -4,13 +4,7 @@
     schema       = 'ml_features',
     dist         = 'customer_id',
     sort         = ['snapshot_date'],
-    tags         = ['gold', 'ml', 'features', 'rfm'],
-    meta         = {
-      'owner': 'data-science',
-      'description': 'Customer RFM + behavioral features for ML models and LLM context',
-      'refresh': 'daily',
-      'feature_store': true
-    }
+    tags         = ['gold', 'ml', 'features', 'rfm']
   )
 }}
 
